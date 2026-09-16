@@ -1,0 +1,86 @@
+# Progressive-delivery policy for `turboserve canary run`.
+#
+# Three independently validated sections, all optional (every absent field falls back to
+# the dataclass default in src/turboserve/canary/):
+#
+#   canary:     the gate itself      -> turboserve.canary.controller.CanaryConfig
+#   prometheus: where evidence comes from -> turboserve.canary.prometheus.PrometheusSettings
+#   kubernetes: what the rollout touches  -> turboserve.canary.k8s.KubeSettings
+#
+# Unknown keys are rejected at load time, so a typo fails the run instead of silently
+# disabling a gate.
+
+canary:
+  # Canary traffic percentage per step. Strictly increasing, ending at 100; the controller
+  # promotes once the 100 % step has survived a full hold.
+  steps: [1, 5, 25, 50, 100]
+
+  # A step must stay healthy this long before the weight is raised.
+  step_hold_s: 300
+
+  # Width of the sliding window every gate is evaluated over. Keep it <= step_hold_s so a
+  # step is judged on traffic it actually served.
+  window_s: 300
+
+  # Canary samples required in the window before any gate fires. Below this the controller
+  # holds: a handful of requests cannot separate a bad build from noise.
+  min_requests: 200
+
+  # Roll back if the canary's failed fraction exceeds this.
+  max_error_rate: 0.005
+
+  # Absolute p95 TTFT budget in milliseconds. Left unset: an absolute millisecond budget
+  # belongs to a specific model and GPU, so each deployment sets its own. The ratio gate
+  # below works without one.
+  max_p95_ttft_ms: null
+
+  # Roll back if the canary's p95 (TTFT or end-to-end) is more than this multiple of the
+  # stable lane's p95 measured in the same window, under the same load.
+  max_p95_ratio_vs_stable: 1.25
+
+  # Roll back if a step never reaches min_requests within this long: a canary taking no
+  # traffic at all (crash loop, failing readiness probe) must not hold for ever.
+  stall_timeout_s: 1800
+
+  # Ring-buffer capacity per lane; bounds memory when the controller is embedded in the
+  # gateway and a burst arrives.
+  max_samples_per_lane: 100000
+
+prometheus:
+  base_url: http://prometheus-operated.monitoring.svc:9090
+  # Range width for every query. Unset means "use canary.window_s", which keeps the
+  # cluster-side gate and the in-process gate looking at the same amount of history.
+  lookback_s: null
+  timeout_s: 10
+  request_metric: turboserve_requests_total
+  ttft_histogram: turboserve_ttft_seconds
+  e2e_histogram: turboserve_e2e_seconds
+  lane_label: lane
+  status_label: status
+  error_statuses: ["error", "timeout", "5xx"]
+  quantile: 0.95
+  # Extra exact-match labels appended to every selector, so one Prometheus can serve
+  # several gateways.
+  extra_labels:
+    service: turboserve-gateway
+
+kubernetes:
+  # "argo"     -> kubectl argo rollouts set weight / promote --full / abort
+  # "services" -> two Deployments + two Services patched with a weight annotation
+  mode: argo
+  namespace: turboserve
+  kubectl_binary: kubectl
+  rollout: turboserve-gateway
+  stable_deployment: turboserve-gateway-stable
+  canary_deployment: turboserve-gateway-canary
+  stable_service: turboserve-gateway-stable
+  canary_service: turboserve-gateway-canary
+  container: gateway
+  weight_annotation: nginx.ingress.kubernetes.io/canary-weight
+  lane_annotation: turboserve.io/lane-weight
+  poll_interval_s: 15
+  command_timeout_s: 60
+  rollout_timeout_s: 600
+  # Hard limit on a whole rollout; exceeding it aborts back to stable. null disables it.
+  deadline_s: 7200
+  dry_run: false

@@ -1,0 +1,126 @@
+# Chaos Mesh manifests for the in-cluster version of the chaos harness.
+#
+# The in-process harness (`turboserve chaos run`) kills worker subprocesses and is what the
+# unit tests exercise; deploy/kind/e2e.sh does the same thing with `kubectl delete pod`.
+# Both are enough to prove that losing a replica is survivable, and neither needs an
+# operator installed. These manifests are the third variant: the same experiments expressed
+# for Chaos Mesh, for a cluster that already runs it and wants the experiments recorded as
+# objects with a history rather than as a loop in a shell script.
+#
+# They are optional. Nothing in the test suite or in CI applies them, because installing
+# the Chaos Mesh controller and its CRDs is a cluster-wide change that a repository's CI
+# has no business making. Apply them by hand against a cluster that has Chaos Mesh:
+#
+#   kubectl apply -n turboserve -f src/turboserve/chaos/k8s/podchaos.yaml
+#   kubectl get schedules,podchaos,networkchaos -n turboserve
+#   kubectl delete -f src/turboserve/chaos/k8s/podchaos.yaml     # stop every experiment
+#
+# Run a load generator against the gateway while they are active and compare the result
+# file the same way the kind job does:
+#
+#   turboserve bench loadgen --url http://turboserve-gateway/v1 --rps 20 --duration 60 \
+#     --out results/chaos/run.json
+#   python deploy/kind/assert_error_rate.py results/chaos/run.json
+#
+# Every experiment targets the gateway by its component label, so it follows the pods
+# across rollouts and never selects the load generator or anything else in the namespace.
+
+---
+# Kill one gateway pod every 10 seconds, indefinitely.
+#
+# `mode: one` is the whole point: a random single victim leaves the remaining replicas
+# serving, so what is measured is whether the Service, the readiness gate and the preStop
+# drain hide the loss from clients. `mode: all` would measure how a client behaves during
+# a total outage, which is a different and much less interesting question.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Schedule
+metadata:
+  name: turboserve-gateway-pod-kill
+  labels:
+    app.kubernetes.io/part-of: turboserve
+    turboserve.io/experiment: pod-kill
+spec:
+  schedule: "@every 10s"
+  # Overlapping experiments would compound into a multi-pod kill, which is exactly what
+  # this experiment is designed not to do.
+  concurrencyPolicy: Forbid
+  historyLimit: 20
+  type: PodChaos
+  podChaos:
+    action: pod-kill
+    mode: one
+    # SIGKILL with no grace period, on purpose: the preStop drain is a best case, and an
+    # engine or gateway process can also die without warning (OOM, node failure). The
+    # error rate has to hold up in the ungraceful case too.
+    gracePeriod: 0
+    selector:
+      labelSelectors:
+        app.kubernetes.io/name: turboserve
+        app.kubernetes.io/component: gateway
+
+---
+# 500 ms of added latency on 5 % of the gateway's packets for 5 minutes.
+#
+# The counterpart of the harness's `latency:p=0.05,ms=500` fault string. A slow dependency
+# is more dangerous than a dead one: a dead backend is retried immediately, while a slow
+# one occupies a connection and shows up as TTFT tail latency, which is what the canary
+# controller's p95 gate is there to catch.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: turboserve-gateway-latency
+  labels:
+    app.kubernetes.io/part-of: turboserve
+    turboserve.io/experiment: latency
+spec:
+  action: delay
+  mode: all
+  duration: 5m
+  selector:
+    labelSelectors:
+      app.kubernetes.io/name: turboserve
+      app.kubernetes.io/component: gateway
+  delay:
+    latency: 500ms
+    correlation: "0"
+    jitter: 50ms
+  # Only the traffic this pod initiates, i.e. gateway -> engine. Delaying ingress as well
+  # would also slow the probes and turn a latency experiment into a liveness experiment.
+  direction: to
+  target:
+    mode: all
+    selector:
+      labelSelectors:
+        app.kubernetes.io/name: turboserve
+        app.kubernetes.io/component: engine
+
+---
+# A single, bounded partition: the gateway cannot reach the engine for 30 seconds.
+#
+# This is the one experiment whose expected outcome is not "no errors". Requests that had
+# not yet produced a first byte should be retried onto another backend; requests already
+# streaming cannot be retried without duplicating tokens, so they fail. The purpose is to
+# check that the failures are confined to in-flight streams and that the gateway recovers
+# without a restart once the partition lifts.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: turboserve-engine-partition
+  labels:
+    app.kubernetes.io/part-of: turboserve
+    turboserve.io/experiment: partition
+spec:
+  action: partition
+  mode: all
+  duration: 30s
+  direction: both
+  selector:
+    labelSelectors:
+      app.kubernetes.io/name: turboserve
+      app.kubernetes.io/component: gateway
+  target:
+    mode: all
+    selector:
+      labelSelectors:
+        app.kubernetes.io/name: turboserve
+        app.kubernetes.io/component: engine
