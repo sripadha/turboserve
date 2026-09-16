@@ -33,7 +33,7 @@ test under `tests/`; every number is rendered from a result file under `results/
 
 | Page | Contents |
 | --- | --- |
-| [`gateway.md`](gateway.md) | OpenAI-compatible routes, auth and tenants, quotas, backends, routing and retries, metrics and cost attribution |
+| [`gateway.md`](gateway.md) | OpenAI-compatible routes, auth and tenants, quotas, backends, routing and retries, metrics, cost attribution and OpenTelemetry tracing |
 | [`canary-and-chaos.md`](canary-and-chaos.md) | SLO gates and the progressive-delivery state machine; fault schedules, breakable replicas and the chaos harness |
 | [`kubernetes.md`](kubernetes.md) | Helm chart values, engine modes and FP8, kustomize overlays, the kind end-to-end run, Prometheus rules and the Grafana dashboard |
 | [`runbook.md`](runbook.md) | Install, rotate tenant keys, add an adapter, roll a canary, roll back, read the dashboards, capacity planning, triage |

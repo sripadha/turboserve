@@ -43,6 +43,10 @@ with identical prompts, identical load shapes and identical percentile code.
   gate, with a computed `Retry-After`; per-tenant model allow-lists and adapter names.
 - Lane-aware weighted routing with health caching, retry **before the first byte only**,
   and per-tenant Prometheus metrics including attributed spend.
+- OpenTelemetry tracing when `TURBOSERVE_OTEL_ENDPOINT` says where to send it: one
+  `turboserve.generate` span per request carrying tenant, model, backend, lane, adapter and
+  token counts, a `first_token` event holding the same TTFT the histogram reports, and the
+  trace context propagated into the engine's own HTTP request — ids only, never prompt text.
 - Engine-agnostic by construction: a pool can mix vLLM and SGLang replicas, so moving a
   model between engines is a weight in `configs/models.yaml` and, if you want it gated, a
   canary lane.

@@ -73,12 +73,14 @@ from turboserve.gateway.openai_types import (
 )
 from turboserve.gateway.router import ModelsFile, Router, RouterConfigError, build_router
 from turboserve.gateway.tenants import TenantConfigError, TenantRegistry
+from turboserve.gateway.tracing import Tracing, configure_tracing, instrument_app
 from turboserve.gateway.usage import PriceTable, UsageAccumulator, UsageRecord, UsageTracker
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import AsyncGenerator, AsyncIterator
 
     from turboserve.gateway.router import CanaryWeightSource, RoutedEvent
+    from turboserve.gateway.tracing import GenerationSpan, _NullGenerationSpan
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +139,9 @@ class GatewayState:
     usage: UsageTracker
     templates: ChatTemplateCache
     options: GatewayOptions
+    tracing: Tracing = field(default_factory=Tracing)
+    """Spans for this app, or a disabled stand-in. Never ``None``: the request path calls
+    it unconditionally and a disabled one answers every call with nothing."""
 
     def served_models(self) -> list[str]:
         """Model names this gateway advertises."""
@@ -238,7 +243,7 @@ def _generate_request(
 
 @dataclass(slots=True)
 class _Session:
-    """One admitted request, its open stream and its accounting."""
+    """One admitted request, its open stream, its accounting and its span."""
 
     state: GatewayState
     principal: Principal
@@ -246,6 +251,7 @@ class _Session:
     accumulator: UsageAccumulator
     stream: AsyncGenerator[RoutedEvent, None]
     first: RoutedEvent
+    span: GenerationSpan | _NullGenerationSpan
     finished: bool = False
 
     @property
@@ -254,12 +260,27 @@ class _Session:
         return self.request.model
 
     def feed(self, routed: RoutedEvent) -> TokenEvent:
-        """Fold one routed event into the accounting and return the inner event."""
-        self.accumulator.on_event(routed.event)
-        return routed.event
+        """Fold one routed event into the accounting and the span; return the inner event.
+
+        The span is fed from the accumulator rather than from the event, so a trace's
+        ``first_token`` event carries the same time-to-first-token the metrics histogram and
+        the usage record carry -- measured from arrival, through auth, quotas and routing.
+        """
+        event = routed.event
+        self.accumulator.on_event(event)
+        if self.accumulator.t_first_token is not None:
+            self.span.first_token(self.accumulator.ttft_s)
+        if event.is_error:
+            self.span.record_error(event.error or "stream failed")
+        if event.finished:
+            self.span.finished(
+                reason=str(event.finish_reason) if event.finish_reason is not None else None,
+                status="error" if event.is_error else "ok",
+            )
+        return event
 
     def complete(self, *, status: str = "ok") -> UsageRecord:
-        """Close the accounting exactly once and publish the record."""
+        """Close the accounting exactly once, end the span, and publish the record."""
         if self.finished:
             return self.state.usage.record(self.accumulator.finish(status=status))
         self.finished = True
@@ -270,6 +291,10 @@ class _Session:
         self.state.metrics.set_queue_depth(
             model=record.model, value=self.state.router.queue_depth()
         )
+        self.span.set_usage(
+            prompt_tokens=record.prompt_tokens, completion_tokens=record.completion_tokens
+        )
+        self.span.end()
         return record
 
 
@@ -295,19 +320,34 @@ async def _open_session(
         estimated=estimated,
         arrival_ts=gen_request.arrival_ts,
     )
+    span = state.tracing.generation(
+        tenant=gen_request.tenant_id,
+        model=gen_request.model,
+        lora=gen_request.lora,
+        prompt_tokens=prompt_tokens,
+    )
     stream = state.router.generate(gen_request)
     try:
-        first = await anext(stream)
+        # The span is made current only for this first pull, which is where an HTTP backend
+        # builds its outgoing request and therefore the only moment a `traceparent` can be
+        # put on it. Holding it across the whole stream would mean attaching a context in
+        # this task and detaching it in the SSE generator's, which is a different task.
+        with span.activate():
+            first = await anext(stream)
     except StopAsyncIteration as exc:
         await stream.aclose()
-        raise BackendUnavailableError(
-            f"backend produced no events for request {gen_request.request_id}"
-        ) from exc
-    except BaseException:
+        message = f"backend produced no events for request {gen_request.request_id}"
+        span.record_error(message)
+        span.end()
+        raise BackendUnavailableError(message) from exc
+    except BaseException as exc:
         await stream.aclose()
+        span.record_error(str(exc))
+        span.end()
         raise
     accumulator.backend = first.backend
     accumulator.lane = first.lane
+    span.set_route(backend=first.backend, lane=first.lane)
     session = _Session(
         state=state,
         principal=principal,
@@ -315,6 +355,7 @@ async def _open_session(
         accumulator=accumulator,
         stream=stream,
         first=first,
+        span=span,
     )
     state.metrics.inc_inflight(tenant=gen_request.tenant_id, model=gen_request.model)
     state.metrics.set_queue_depth(model=gen_request.model, value=state.router.queue_depth())
@@ -514,13 +555,15 @@ def create_app(
     templates: ChatTemplateCache | None = None,
     options: GatewayOptions | None = None,
     canary: CanaryWeightSource | None = None,
+    tracing: Tracing | None = None,
 ) -> FastAPI:
     """Build the gateway application.
 
     Every collaborator is injectable and every one has a sensible default, so production
     calls this with a settings object and tests call it with a router full of mocks. Nothing
     is read from module-level state, which is what allows two gateways to coexist in one
-    process without sharing quotas or metrics.
+    process without sharing quotas or metrics -- tracing included: the provider is this
+    app's, handed to the FastAPI instrumentation explicitly rather than installed globally.
     """
     settings = settings or Settings()
     options = options or GatewayOptions()
@@ -550,6 +593,7 @@ def create_app(
                 ", ".join(example_tenants),
             )
 
+    resolved_tracing = tracing if tracing is not None else configure_tracing(settings)
     resolved_metrics = metrics or GatewayMetrics(
         include_process_metrics=options.include_process_metrics
     )
@@ -569,6 +613,7 @@ def create_app(
         usage=UsageTracker(prices=resolved_prices, metrics=resolved_metrics),
         templates=templates or ChatTemplateCache(local_files_only=options.local_files_only),
         options=options,
+        tracing=resolved_tracing,
     )
     resolved_router.attach(limiters=resolved_limiters, metrics=resolved_metrics)
 
@@ -580,6 +625,10 @@ def create_app(
     app.state.gateway = state
     _install_routes(app)
     _install_exception_handlers(app)
+    # After the routes, so every one of them is wrapped: the server span this creates is the
+    # parent of each `turboserve.generate` span and the thing that adopts a client's
+    # incoming traceparent. A no-op when tracing is disabled.
+    instrument_app(app, resolved_tracing)
     return app
 
 

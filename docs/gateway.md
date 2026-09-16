@@ -62,6 +62,7 @@ available.
 | `chat_template.py` | `ChatTemplate`, `ChatTemplateCache`, the fallback template |
 | `metrics.py` | `GatewayMetrics` — one private Prometheus registry per app |
 | `usage.py` | `UsageAccumulator`, `UsageRecord`, `UsageTracker`, `PriceTable` |
+| `tracing.py` | `Tracing`, `GenerationSpan`, `configure_tracing`, `instrument_app`, `inject_trace_context` |
 | `backends/openai_compat.py` | `OpenAICompatBackend` — streams from vLLM/SGLang/TGI over httpx |
 | `backends/mock.py` | `MockBackend`, `build_mock_app`, `serve_mock` |
 
@@ -379,6 +380,74 @@ two output tokens, because a one-token completion has no inter-token gap.
 field OpenAI already uses for prompt caching, so a client that understands prompt caching
 needs no turboserve-specific code.
 
+## Tracing
+
+Metrics say *how many* requests were slow; a trace says which one, and where the time went.
+`tracing.py` adds one span per generation and propagates the trace to whatever answered it,
+so a slow request at the gateway and the engine's own view of that same request are two
+nodes of one trace rather than two systems to correlate by timestamp.
+
+**Off unless asked for.** `TURBOSERVE_OTEL_ENDPOINT` — the OTLP/HTTP path of a collector,
+e.g. `http://otelcol:4318/v1/traces` — is the whole switch. Unset, `configure_tracing`
+returns a disabled `Tracing`, imports nothing from `opentelemetry` and hands the request
+path a null span whose every method does nothing, so the feature costs an attribute lookup
+per request rather than an exporter, a queue and four packages. The packages are an optional
+extra (`uv sync --extra otel`); with the endpoint set and the extra missing, the gateway logs
+one warning and serves exactly as before — observability must never be the reason a fleet
+cannot boot.
+
+| Setting | Environment variable | What it does |
+| --- | --- | --- |
+| `otel_endpoint` | `TURBOSERVE_OTEL_ENDPOINT` | OTLP/HTTP traces endpoint; empty disables tracing |
+| `otel_service_name` | `TURBOSERVE_OTEL_SERVICE_NAME` | `service.name` on the exported resource |
+| `otel_service_namespace` | `TURBOSERVE_OTEL_SERVICE_NAMESPACE` | `service.namespace`; the chart sets the release namespace |
+| `otel_sample_ratio` | `TURBOSERVE_OTEL_SAMPLE_RATIO` | Ratio for traces this gateway *starts*; a sampled parent is always honoured |
+
+The span:
+
+```
+turboserve.generate                        child of the FastAPI server span
+  turboserve.tenant             "acme"
+  turboserve.model              "Qwen/Qwen2.5-7B-Instruct"
+  turboserve.backend            "vllm-a"   set once the router has chosen a replica
+  turboserve.lane               "stable"
+  turboserve.lora               "acme-support-r16"   absent when no adapter was resolved
+  turboserve.prompt_tokens      <int>      the count the backend reported, or the estimate
+  turboserve.completion_tokens  <int>
+  event first_token  { turboserve.ttft_ms = <float>, milliseconds since arrival }
+  event finished     { turboserve.finish_reason = "stop", turboserve.status = "ok" }
+```
+
+Attributes are namespaced because OpenTelemetry's semantic conventions own the unprefixed
+names, and the suffixes are the label names `metrics.py` already uses, so a span and a metric
+series join on the same words. `first_token` carries the same TTFT the histogram does —
+measured from arrival, through auth, quotas and routing — so a trace and a dashboard cannot
+disagree about what TTFT means.
+
+**Ids, never content.** No prompt text, no completion text, no messages, no API key and
+nothing derived from them ever reaches a span. A trace backend is usually a different trust
+domain from the gateway and frequently retains data for months, and a prompt is the one thing
+here that is unambiguously the tenant's. A test asserts it by sending a distinctive string
+and searching the exported span for it.
+
+**Propagation.** The FastAPI auto-instrumentation adopts an incoming `traceparent`, and
+`OpenAICompatBackend` injects the current context into its outgoing request, so vLLM's or
+SGLang's own spans hang under the gateway's. The header goes on the individual request and
+never on the client's default headers, which are shared by every request on that connection
+pool. `/healthz`, `/readyz` and `/metrics` are excluded: they are polled forever and tracing
+them buries everything else.
+
+**No global state.** Nothing calls `trace.set_tracer_provider`. The provider lives on
+`GatewayState` and is handed to the instrumentation explicitly, so two gateways in one
+process — the real one and the in-process mock upstream the chaos harness builds — get two
+providers instead of fighting over a global only the first caller may set.
+
+Running a collector is a prerequisite this repository does not ship. Anything that terminates
+OTLP works: `otel/opentelemetry-collector`, Grafana Alloy, Tempo, or Jaeger with OTLP
+enabled. `docker-compose.yml` passes `TURBOSERVE_OTEL_ENDPOINT` straight through, and the
+Helm chart renders it from `gateway.tracing.endpoint` (with `serviceName` and `sampleRatio`
+beside it, and a render-time check that the ratio is a fraction).
+
 ## Running it
 
 ```bash
@@ -469,6 +538,10 @@ These are deliberate, and each is enforced rather than assumed:
   rolling restart); there is no hot reload.
 - **Prompt token counts may be estimates** when the gateway has no local tokenizer for a model
   and the backend reports no usage. Such records are flagged `estimated`.
+- **Tracing is exported, never stored.** The gateway has no trace backend of its own and no
+  buffer beyond the exporter's: with no collector reachable, spans are dropped after the
+  OTLP client's own retries and the request path never notices. That is the intended
+  failure mode — a serving request must not wait on an observability pipeline.
 - **The chat template needs local files by default.** A gateway fronting a remote server with
   no local checkpoint uses the fallback template; set `GatewayOptions(local_files_only=False)`
   to allow a download.

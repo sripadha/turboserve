@@ -58,6 +58,18 @@ dependencies = [
 # with one flag on hardware that can run it.
 vllm = ["vllm>=0.8"]
 
+# Distributed tracing. An extra rather than a runtime dependency because a gateway with no
+# TURBOSERVE_OTEL_ENDPOINT never builds a tracer and must not pay for four imports it will
+# not use; src/turboserve/gateway/tracing.py degrades to a documented no-op when the
+# packages are absent. They are pure Python and small, so the dev group installs them too
+# and the default test suite exercises the real SDK rather than a stand-in.
+otel = [
+    "opentelemetry-api>=1.30",
+    "opentelemetry-sdk>=1.30",
+    "opentelemetry-exporter-otlp-proto-http>=1.30",
+    "opentelemetry-instrumentation-fastapi>=0.51b0",
+]
+
 [project.urls]
 Homepage = "https://github.com/sripadha/turboserve"
 Repository = "https://github.com/sripadha/turboserve"
@@ -74,6 +86,12 @@ dev = [
     "mypy>=1.14",
     "types-PyYAML>=6",
     "pre-commit>=4",
+    # The `otel` extra's packages, so tests/unit/test_gateway_tracing.py drives the real
+    # SDK (InMemorySpanExporter) instead of asserting against a mock of it.
+    "opentelemetry-api>=1.30",
+    "opentelemetry-sdk>=1.30",
+    "opentelemetry-exporter-otlp-proto-http>=1.30",
+    "opentelemetry-instrumentation-fastapi>=0.51b0",
 ]
 
 # ---------------------------------------------------------------------------

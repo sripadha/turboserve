@@ -431,6 +431,21 @@ def test_chart_values_declare_the_quantization_switch_off_by_default() -> None:
         assert profile["engine"]["quantization"] == "none", f"{path.name} must not default to fp8"
 
 
+def test_the_gateway_env_helper_renders_the_tracing_variables() -> None:
+    """Tracing is environment rather than a flag, and only when an endpoint is configured."""
+    helpers = (CHART / "templates" / "_helpers.tpl").read_text(encoding="utf-8")
+    guard = helpers.index("{{- if .Values.gateway.tracing.endpoint }}")
+    for name in (
+        "TURBOSERVE_OTEL_ENDPOINT",
+        "TURBOSERVE_OTEL_SERVICE_NAME",
+        "TURBOSERVE_OTEL_SERVICE_NAMESPACE",
+        "TURBOSERVE_OTEL_SAMPLE_RATIO",
+    ):
+        assert guard < helpers.index(name), f"{name} must be guarded by the endpoint value"
+    values = yaml.safe_load((CHART / "values.yaml").read_text(encoding="utf-8"))
+    assert values["gateway"]["tracing"]["endpoint"] == ""
+
+
 # --- the rest of the assets ----------------------------------------------------------------
 
 

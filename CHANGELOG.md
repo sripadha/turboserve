@@ -122,6 +122,67 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `docs/{gateway,kubernetes,vastai,scenarios,benchmarking,architecture,runbook,engine}.md`
   plus the README name both production engines wherever they named one.
 
+#### FP8 on Hopper
+
+- `engine.quantization: none|fp8` in the Helm chart, wired into both production modes' argv:
+  `--quantization fp8 --kv-cache-dtype fp8` for vLLM and `--quantization fp8
+  --kv-cache-dtype fp8_e5m2` for SGLang, which is the one place the two engines' command
+  lines genuinely differ (vLLM's `fp8` is E4M3 with per-tensor scales; SGLang names the
+  format and this deployment asks for the scale-free one). `engine.quantizedCheckpoint`
+  serves a repository that already ships FP8 weights, where the checkpoint declares its own
+  scheme and `--quantization` must not be passed. The chart refuses `fp8` in `mock` or
+  `reference` mode at render time rather than crash-looping a pod, and `make k8s-lint` now
+  renders six shapes instead of four — each production engine again with fp8, SGLang's from
+  a pre-quantized checkpoint.
+- `QUANT=fp8` in `deploy/vllm/launch.sh` and `deploy/sglang/launch.sh`, with `FP8_MODEL` for
+  a pre-quantized checkpoint (the vLLM launcher keeps `--served-model-name` on the bf16 name,
+  so clients address one model string either way) and an unknown `QUANT` refused with a
+  status rather than handed to the server. `docker-compose.yml` documents the two flags on
+  both engine services.
+- `naive-vs-cb` gains `vllm_fp8` and `sglang_fp8` arms, labelled `vLLM (fp8)` and
+  `SGLang (fp8)`. A numeric format is a launch decision, so each is a server of its own with
+  its own `--url` (`VLLM_FP8_URL`, `SGLANG_FP8_URL` in `scripts/run_all_benchmarks.sh`), and
+  each records `config["engine"]["quantization"]` and `["kv_cache_dtype"]` — the operator's
+  declaration of what the row means, since a client cannot see how a server was started.
+  FP8 is measured in this scenario only: it is the one that sweeps concurrency.
+- Each fp8 arm names its own bf16 twin in `config["compare_to"]`, so the renderer draws
+  `SGLang (fp8)` against `SGLang` as its own relative table. Against `naive` the ratio would
+  multiply an engine difference by a format difference, which is not a number anybody can act
+  on.
+- `docs/kubernetes.md` (the values, the two argv, the three render-time refusals),
+  `docs/vastai.md` (starting the two extra servers on the rented instance),
+  `docs/scenarios.md`, and `deploy/{vllm,sglang}/README.md`. `docs/engine.md` states the
+  matching limitation: the reference engine runs bf16/fp16 only, with no quantized kernel and
+  no scale-aware KV layout, and FP8 is a production-engine option here.
+
+#### OpenTelemetry tracing
+
+- `gateway/tracing.py`: `configure_tracing(settings)` builds an OTLP/HTTP exporter from
+  `TURBOSERVE_OTEL_ENDPOINT` (with service name, namespace, version and the engine and model
+  as resource attributes) or returns a disabled object that imports nothing and hands the
+  request path a null span. FastAPI auto-instrumentation gives every request a server span —
+  and adopts an incoming `traceparent` — with `/healthz`, `/readyz` and `/metrics` excluded.
+- One `turboserve.generate` span per request carrying tenant, model, backend, lane, adapter
+  and the prompt and completion token counts, with a `first_token` event holding the same
+  TTFT the histogram reports (measured from arrival, not from the backend call) and a
+  `finished` event holding the finish reason and status. Ids and counts only: no prompt text,
+  no completion text, no key, and a test that asserts it by searching an exported span for a
+  distinctive prompt.
+- `OpenAICompatBackend` injects the current trace context into its outgoing request, so
+  vLLM's or SGLang's own spans hang under the gateway's. Per request rather than on the
+  client's shared default headers, which would pin one request's trace id to every later
+  request on that connection pool.
+- No global tracer provider: the provider lives on `GatewayState` and is passed to the
+  instrumentation explicitly, so two gateways in one process get two providers.
+- `opentelemetry-api`, `-sdk`, `-exporter-otlp-proto-http` and `-instrumentation-fastapi` as
+  an optional `otel` extra and in the dev group, so `tests/unit/test_gateway_tracing.py`
+  drives the real SDK against an `InMemorySpanExporter` rather than a mock of it. With the
+  endpoint set and the extra missing, the gateway logs one warning and serves as before.
+- `gateway.tracing.{endpoint,serviceName,sampleRatio}` in the Helm chart (rendered as
+  `TURBOSERVE_OTEL_*` environment, with a render-time check that the ratio is a fraction),
+  `TURBOSERVE_OTEL_ENDPOINT` passed through by `docker-compose.yml` with a note on running a
+  collector, and a `Tracing` section in `docs/gateway.md`.
+
 #### Scaffold
 
 - Repository scaffold: `uv`-managed packaging (`pyproject.toml`, `uv.lock`, `.python-version`),
@@ -153,6 +214,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- `results/` holds 110 projected result documents where it held 104: the two FP8 arms of
+  `naive_vs_cb` at each of the three concurrencies. Their anchor — a throughput band per
+  concurrency and a time-to-first-token factor — is written out in
+  `scripts/project_h100_results.py`, the one place in this repository where a performance
+  figure may be typed, together with why the band widens with load and the closed-loop
+  identity that makes the TPOT and cost columns follow from the throughput one. Each fp8 arm
+  is derived as a factor on its own bf16 twin rather than stated absolutely, so the rendered
+  ratio is the documented anchor by construction.
+- The README's Results section opens with two charts — `naive_vs_cb` output tokens/s and
+  `prefix_cache` time to first token — linked relatively into `results/plots/`. Both paths
+  are functions of the scenario name, and a test pins the README's links to the names
+  `render_scenario_plots` writes, so a re-render cannot leave the front page with broken
+  images.
 - Result files record the installed `sglang` version alongside `vllm` (as `None` when the
   package is absent, so a run made without it is distinguishable from an older file that
   never looked), and the rendered pages' hardware line names whichever serving engines the

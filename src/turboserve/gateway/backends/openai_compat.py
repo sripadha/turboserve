@@ -49,6 +49,7 @@ from turboserve.gateway.backends.protocol import (
     ModelNotFoundError,
     TokenEvent,
 )
+from turboserve.gateway.tracing import inject_trace_context
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import AsyncIterator
@@ -234,8 +235,16 @@ class OpenAICompatBackend:
         started = False
         finish_reason: FinishReason | None = None
         usage: dict[str, Any] | None = None
+        # W3C trace context on the outgoing request, so the engine's own spans hang under
+        # the gateway's instead of starting a trace of their own. Per request rather than on
+        # the client's default headers: those are shared by every request on this connection
+        # pool, and a traceparent written there would pin one request's trace id to all of
+        # them. Empty when tracing is off or nothing is being traced.
+        headers = inject_trace_context()
         try:
-            async with self._client.stream("POST", "/completions", json=body) as response:
+            async with self._client.stream(
+                "POST", "/completions", json=body, headers=headers
+            ) as response:
                 if response.status_code != httpx.codes.OK:
                     raise await self._status_error(response, req)
                 async for line in response.aiter_lines():

@@ -193,6 +193,22 @@ address one lane at a time.
 - name: TURBOSERVE_ADAPTERS_DIR
   value: {{ .Values.engine.adapters.mountPath | quote }}
 {{- end }}
+{{- if .Values.gateway.tracing.endpoint }}
+{{/*
+Tracing is the one thing here that is environment rather than a flag: `gateway serve` takes
+no --otel-* options, because whether a process is traced is a property of where it runs and
+not of what it was asked to do. An empty endpoint renders nothing at all, and the gateway
+then builds no tracer.
+*/}}
+- name: TURBOSERVE_OTEL_ENDPOINT
+  value: {{ .Values.gateway.tracing.endpoint | quote }}
+- name: TURBOSERVE_OTEL_SERVICE_NAME
+  value: {{ default (include "turboserve.gateway.fullname" .) .Values.gateway.tracing.serviceName | quote }}
+- name: TURBOSERVE_OTEL_SERVICE_NAMESPACE
+  value: {{ .Release.Namespace | quote }}
+- name: TURBOSERVE_OTEL_SAMPLE_RATIO
+  value: {{ .Values.gateway.tracing.sampleRatio | quote }}
+{{- end }}
 {{- range $name, $value := .Values.gateway.env }}
 - name: {{ $name }}
   value: {{ $value | quote }}
@@ -336,6 +352,12 @@ half-works. Each check is one a reviewer would otherwise have to make by reading
 {{- end -}}
 {{- if and (eq .Values.engine.sglang.speculative.algorithm "EAGLE") (not .Values.engine.sglang.speculative.draftModel) -}}
 {{- fail "engine.sglang.speculative.algorithm=EAGLE requires engine.sglang.speculative.draftModel: EAGLE drafts from a checkpoint, unlike NEXTN which uses the target's own head" -}}
+{{- end -}}
+{{- end -}}
+{{- if .Values.gateway.tracing.endpoint -}}
+{{- $ratio := float64 .Values.gateway.tracing.sampleRatio -}}
+{{- if or (lt $ratio 0.0) (gt $ratio 1.0) -}}
+{{- fail (printf "gateway.tracing.sampleRatio must be between 0.0 and 1.0, got %v" .Values.gateway.tracing.sampleRatio) -}}
 {{- end -}}
 {{- end -}}
 {{- if and .Values.gateway.autoscaling.enabled .Values.gateway.pdb.enabled .Values.gateway.pdb.maxUnavailable (eq (int .Values.gateway.autoscaling.minReplicas) 1) -}}

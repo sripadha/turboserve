@@ -125,6 +125,7 @@ k8s-lint: ## helm lint + helm template | kubeconform + kustomize build (needs he
 		--set engine.adapters.enabled=true \
 		--set engine.adapters.sync.sourceUrl=s3://example-bucket/adapters \
 		--set gateway.autoscaling.queueDepth.enabled=true \
+		--set gateway.tracing.endpoint=http://otelcol.observability:4318/v1/traces \
 		| $(KUBECONFORM) -strict -summary -ignore-missing-schemas
 	$(HELM) template turboserve $(CHART) \
 		-f deploy/sglang/values-h100.yaml \

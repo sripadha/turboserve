@@ -66,6 +66,22 @@ gateway:
 
   logLevel: INFO
 
+  # Distributed tracing, off unless an endpoint is given. `endpoint` is the OTLP/HTTP path
+  # of a collector -- the full path, because OTLP/HTTP puts traces, metrics and logs on
+  # three different ones and this gateway exports only traces. In a cluster that runs the
+  # OpenTelemetry Operator it is usually
+  #   http://<collector>-collector.observability.svc.cluster.local:4318/v1/traces
+  # and with nothing installed it is the one thing to install first: the gateway exports
+  # OTLP and nothing else, so any collector (otelcol, Tempo, Jaeger with OTLP enabled,
+  # Grafana Alloy) terminates it. `sampleRatio` applies only to traces this gateway starts;
+  # a request arriving with a sampled parent is always recorded. See docs/gateway.md.
+  tracing:
+    endpoint: ""
+    # Empty means the release's gateway name, which is what distinguishes two turboserve
+    # deployments reporting to one collector.
+    serviceName: ""
+    sampleRatio: 1.0
+
   # Extra environment variables, as a plain map (name: value) or a list of EnvVar objects
   # under `envFrom`/`extraEnv` for secret references.
   env: {}

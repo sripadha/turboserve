@@ -18,6 +18,16 @@ uv run pytest -q
 `uv sync` creates the environment itself, so there is no separate `uv venv` step; running
 `uv venv` on a checkout that already has a `.venv` fails instead of being a no-op.
 
+Two optional extras, neither installed by `--all-groups` alone. `vllm` needs an
+Ampere-or-newer CUDA GPU and is only ever installed on a measurement host. `otel` is the
+four OpenTelemetry packages the gateway's tracing uses; they are small and pure Python, so
+they are *also* in the dev group and the default test suite exercises the real SDK. A
+runtime install that wants tracing asks for the extra:
+
+```bash
+uv sync --extra otel
+```
+
 `torch` is pinned to `2.6.0` and resolved from the CUDA 12.4 wheel index declared as the
 `pytorch-cu124` index in `pyproject.toml`. That index is `explicit = true`, so only `torch`
 comes from it and everything else still comes from PyPI. To install a CPU-only build

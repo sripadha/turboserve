@@ -59,6 +59,15 @@ services:
       - --require-auth
     environment:
       PYTHONUNBUFFERED: "1"
+      # Distributed tracing, off unless you point it at a collector. The gateway speaks
+      # OTLP/HTTP and nothing else, so any collector terminates it; the quickest one is
+      #   docker run -p 4318:4318 otel/opentelemetry-collector:0.140.1
+      # with a config that receives otlp/http and exports to wherever you read traces
+      # (Jaeger and Tempo both accept OTLP directly, so they work as the endpoint too).
+      # The full path is required -- OTLP/HTTP puts traces, metrics and logs on three
+      # different ones. Empty is the default and means no tracer is built at all.
+      TURBOSERVE_OTEL_ENDPOINT: ${TURBOSERVE_OTEL_ENDPOINT:-}
+      TURBOSERVE_OTEL_SERVICE_NAME: ${TURBOSERVE_OTEL_SERVICE_NAME:-turboserve-gateway}
     ports:
       - "${GATEWAY_PORT:-8000}:8000"
     volumes:

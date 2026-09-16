@@ -73,6 +73,23 @@ class Settings(BaseSettings):
     max_lora_rank: int = Field(default=16, ge=1)
     adapters_dir: Path = Path("adapters")
 
+    # --- tracing ------------------------------------------------------------------
+    # OTLP/HTTP endpoint for spans, e.g. http://otel-collector:4318/v1/traces. Empty (the
+    # default) means the gateway builds no tracer at all: `configure_tracing` returns a
+    # disabled object, nothing is imported and no span is created, so an installation that
+    # does not want tracing pays nothing for the feature existing. The full path is given
+    # rather than a base URL because the OTLP/HTTP spec puts traces, metrics and logs on
+    # three different paths and this gateway exports only the first.
+    otel_endpoint: str | None = None
+    otel_service_name: str = "turboserve-gateway"
+    #: `service.namespace` on the exported resource: which deployment these spans came from
+    #: when several gateways report to one collector.
+    otel_service_namespace: str = "turboserve"
+    #: Sampling ratio for traces this gateway starts, 0.0 to 1.0. A decision it makes for
+    #: itself only: a request arriving with a sampled parent is always recorded, because
+    #: dropping half of somebody else's trace produces a broken one rather than a cheap one.
+    otel_sample_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
+
     # --- fleet data and outputs ---------------------------------------------------
     tenants_file: Path = Path("configs/tenants.yaml")
     models_file: Path = Path("configs/models.yaml")
