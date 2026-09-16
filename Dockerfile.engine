@@ -1,0 +1,94 @@
+# syntax=docker/dockerfile:1.7
+#
+# turboserve engine image: the reference engine (paged KV cache, continuous batching,
+# speculative decoding, multi-LoRA) on CUDA 12.4.
+#
+# The base is the CUDA *runtime* image, not devel: the wheels this project installs ship
+# their own CUDA libraries and PTX, and nothing is compiled at image build time. Triton
+# JIT-compiles kernels at first use inside the container, which needs only the driver on
+# the host plus the runtime libraries here.
+#
+# Build:  docker build -f Dockerfile.engine -t turboserve-engine:dev .
+# Run:    docker run --rm --gpus all turboserve-engine:dev hwinfo
+
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04 AS builder
+
+COPY --from=ghcr.io/astral-sh/uv:0.11.19 /uv /usr/local/bin/uv
+
+# Ubuntu 22.04 ships CPython 3.10 and this project requires >= 3.12, so uv downloads a
+# standalone interpreter rather than adding a third-party apt repository. It must land in
+# a directory the runtime stage can copy: a uv venv only *symlinks* its interpreter, so
+# with the default location (/root/.local/share/uv/python) /opt/turboserve/bin/python
+# would be a dangling symlink in the runtime stage and the console script could not exec.
+ENV DEBIAN_FRONTEND=noninteractive \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/opt/turboserve \
+    UV_PYTHON=3.12 \
+    UV_PYTHON_DOWNLOADS=automatic \
+    UV_PYTHON_INSTALL_DIR=/opt/python
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN uv python install 3.12
+
+WORKDIR /build
+
+# `--frozen` pins exactly the committed CUDA 12.4 resolution: this image is the one whose
+# software versions end up in every result JSON, so it must not drift from uv.lock.
+COPY pyproject.toml uv.lock README.md LICENSE ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-project
+
+COPY src ./src
+
+# `--no-editable` is required: the default editable install writes a .pth pointing at
+# /build/src, which does not exist in the runtime stage, so `turboserve` would die with
+# ModuleNotFoundError. This copies the package into the venv instead.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-editable
+
+
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04 AS runtime
+
+LABEL org.opencontainers.image.title="turboserve-engine" \
+      org.opencontainers.image.description="turboserve reference LLM engine (CUDA 12.4)" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.source="https://github.com/sripadha/turboserve"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PATH=/opt/turboserve/bin:$PATH \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    HF_HOME=/models \
+    TRITON_CACHE_DIR=/tmp/triton \
+    TURBOSERVE_HOST=0.0.0.0 \
+    TURBOSERVE_PORT=8001 \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates libgomp1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 turboserve \
+    && useradd --system --uid 10001 --gid 10001 --create-home --home-dir /home/turboserve turboserve \
+    && mkdir -p /models /app /tmp/triton \
+    && chown -R 10001:10001 /models /app /tmp/triton
+
+# The venv's interpreter lives in /opt/python (see UV_PYTHON_INSTALL_DIR above), so both
+# directories have to move over or /opt/turboserve/bin/python dangles.
+COPY --from=builder --chown=10001:10001 /opt/python /opt/python
+COPY --from=builder --chown=10001:10001 /opt/turboserve /opt/turboserve
+COPY --chown=10001:10001 configs /app/configs
+
+WORKDIR /app
+USER 10001:10001
+EXPOSE 8001
+
+# Model weights are mounted, never baked in: `-v $HF_HOME:/models`.
+VOLUME ["/models"]
+
+ENTRYPOINT ["turboserve"]
+CMD ["hwinfo"]

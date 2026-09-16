@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Environments
+.venv/
+venv/
+.env
+.env.*
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+.hypothesis/
+
+# Model and compiler artifacts (large, regenerable)
+*.onnx
+*.engine
+*.plan
+*.trt
+# ... but the engine image's build file is source, not a TensorRT engine.
+!Dockerfile.engine
+*.nsys-rep
+*.ncu-rep
+*.sqlite
+
+# Generated LoRA adapters at the repo root (recreated by scripts/make_lora_adapters.py).
+# Anchored with a leading slash on purpose: an unanchored `adapters/` would also ignore the
+# source package src/turboserve/engine/lora/adapters/ and test fixtures under tests/.
+/adapters/
+
+# Local model cache, if a run points HF_HOME here
+.hf_cache/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+
+# results/ is intentionally NOT ignored: measured JSON is part of the repository.

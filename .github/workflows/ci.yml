@@ -1,0 +1,120 @@
+# CPU CI: lint, type-check and the default (CPU, tiny-model) test suite, plus a build and
+# smoke run of the gateway container image.
+#
+# GitHub's hosted runners have no NVIDIA GPU and ~14 GB of disk, so installing the committed
+# lock file as-is would pull ~3 GB of CUDA 12.4 wheels that can never be used. `pyproject.toml`
+# declares the torch wheel index as a named index (`pytorch-cu124`) with `explicit = true`, so
+# the smallest correct swap is to rewrite that one URL to the CPU wheel index in place (see the
+# step below). GPU-marked tests are deselected by the default `addopts`, and the tiny-model
+# tests skip themselves because the runner has no populated Hugging Face cache (they never
+# download).
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: lint + types + cpu tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.19"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Check uv.lock matches pyproject.toml
+        run: uv lock --check
+
+      # Point the torch index at the CPU wheels.
+      #
+      # This is done with `sed` rather than the `UV_INDEX` environment variable on purpose: an
+      # index supplied through `UV_INDEX` is NOT `explicit`, so uv's first-index strategy then
+      # applies to every package that index happens to carry (filelock, idna, jinja2, numpy,
+      # setuptools, typing-extensions, ...), silently sourcing and downgrading them from
+      # download.pytorch.org and failing outright when a version pin cannot be satisfied there.
+      # Editing the URL inside `[[tool.uv.index]]` keeps `explicit = true`, so the index is
+      # still consulted for `torch` alone and everything else resolves from PyPI.
+      #
+      # The edit invalidates the committed CUDA lock, hence it runs *after* `uv lock --check`
+      # and the sync below is allowed to re-resolve (no `--frozen`/`--locked`). Nothing is
+      # committed back; the checkout is thrown away with the runner.
+      - name: Point the torch index at the CPU wheels
+        run: |
+          sed -i 's|download.pytorch.org/whl/cu124|download.pytorch.org/whl/cpu|' pyproject.toml
+          grep -n 'download.pytorch.org' pyproject.toml
+
+      - name: Install dependencies (CPU torch)
+        run: uv sync --all-groups
+
+      - name: Show the resolved torch build
+        run: uv run python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+
+      - name: ruff check
+        run: uv run ruff check --output-format=github .
+
+      - name: ruff format --check
+        run: uv run ruff format --check .
+
+      - name: mypy
+        run: uv run mypy src
+
+      - name: pytest (unit, CPU)
+        run: uv run pytest -q
+
+      - name: Restore the committed pyproject.toml
+        if: always()
+        run: git checkout -- pyproject.toml
+
+  # The only place either Dockerfile is exercised. Hosted runners have Docker, so the gateway
+  # image (slim CPU base, CPU torch) is built here from the same `make docker-build` a
+  # developer runs, then started so that a broken ENTRYPOINT/CMD or a venv that does not
+  # survive the multi-stage copy fails the build instead of being discovered at deploy time.
+  #
+  # Dockerfile.engine is deliberately NOT built here: it layers the CUDA 12.4 torch
+  # resolution on nvidia/cuda:12.4.1-runtime, which exceeds a hosted runner's free disk. It is
+  # built on the GPU host; see CONTRIBUTING.md#deliverables-not-built-yet.
+  docker:
+    name: gateway image build + smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the gateway image
+        run: make docker-build IMAGE=turboserve-gateway:ci
+
+      - name: Report the image size
+        run: docker image ls turboserve-gateway:ci
+
+      # The default CMD. `hwinfo` exercises the console script, the copied venv and the
+      # non-root user, and prints the record every result file embeds; on a runner with no
+      # NVIDIA driver its GPU fields are null, which is a supported outcome, not a failure.
+      - name: Smoke-test the image (default CMD)
+        run: docker run --rm turboserve-gateway:ci
+
+      - name: Smoke-test the image (explicit subcommand)
+        run: docker run --rm turboserve-gateway:ci version
+
+      # The package must be importable from the runtime stage's copied venv rather than from
+      # a leftover editable .pth pointing at the builder's /build/src.
+      - name: Check the package resolves inside the image
+        run: |
+          docker run --rm --entrypoint python turboserve-gateway:ci \
+            -c "import turboserve, pathlib; p = pathlib.Path(turboserve.__file__); print(p); assert p.is_relative_to('/opt/turboserve'), p"

@@ -1,0 +1,22 @@
+# Run on every commit: `uv run pre-commit install`.
+# The same checks run in .github/workflows/ci.yml, so a green commit is a green CI lint job.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+        args: ["--allow-multiple-documents"]
+        # Helm templates are Go templates, not YAML, and cannot be parsed by check-yaml.
+        exclude: ^deploy/helm/.*/templates/
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.7  # keep in step with the `ruff` pin in uv.lock (CI runs `uv run ruff`)
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format

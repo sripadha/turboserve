@@ -1,0 +1,67 @@
+# Build context for `docker build -f Dockerfile.gateway .` and `-f Dockerfile.engine .`.
+#
+# Both images install dependencies from pyproject.toml + uv.lock and copy only `src/`
+# and `configs/` (plus README.md and LICENSE, which the package build reads), so
+# everything below is either host-specific, regenerable, or pure weight: .venv/ alone is
+# gigabytes of wheels built for this machine's CPython and CUDA, and .git/ carries the
+# whole history to the daemon on every build. Keeping them out also means a future
+# `COPY . .` cannot bake a host-specific virtualenv into an image.
+
+# Version control and CI
+.git/
+.gitattributes
+.gitignore
+.github/
+
+# Environments -- the images build their own under /opt/turboserve
+.venv/
+venv/
+.env
+.env.*
+
+# Byte-code, build and tool caches
+**/__pycache__/
+**/*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+.hypothesis/
+
+# Not used by any image: measured results, prose, deployment manifests, host-side
+# scripts and the test suite.
+results/
+docs/
+deploy/
+scripts/
+tests/
+CHANGELOG.md
+CONTRIBUTING.md
+.pre-commit-config.yaml
+
+# Large regenerable artifacts a local run may leave in the checkout
+*.onnx
+*.engine
+*.plan
+*.trt
+*.nsys-rep
+*.ncu-rep
+*.sqlite
+# Anchored like .gitignore: only the repo-root adapters/ directory, never a source or
+# fixture directory that happens to be named adapters/.
+/adapters/
+.hf_cache/
+# `*.engine` above also matches the engine image's build file; BuildKit reads the
+# Dockerfile out of band, but un-ignoring it keeps `docker build` honest either way.
+!Dockerfile.engine
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store

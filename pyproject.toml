@@ -1,0 +1,123 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "turboserve"
+version = "0.1.0"
+description = "Serve many tenants from one GPU pool: a from-scratch reference LLM engine (continuous batching, paged KV cache with automatic prefix caching, speculative decoding, batched multi-LoRA), an OpenAI-compatible multi-tenant gateway with SLO-gated canaries and chaos testing, and a vLLM + Kubernetes production deployment path."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "E G Sripadha Vallabha" }]
+maintainers = [{ name = "E G Sripadha Vallabha" }]
+keywords = [
+    "llm",
+    "inference",
+    "continuous-batching",
+    "paged-attention",
+    "prefix-cache",
+    "speculative-decoding",
+    "lora",
+    "multi-tenant",
+    "vllm",
+    "kubernetes",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+dependencies = [
+    "torch==2.6.0",
+    "transformers>=4.50",
+    "safetensors>=0.4.5",
+    "huggingface-hub>=0.30",
+    "numpy>=1.26",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "httpx>=0.28",
+    "pydantic>=2",
+    "pydantic-settings>=2.8",
+    "prometheus-client>=0.21",
+    "pyyaml>=6",
+    "typer>=0.15",
+    "rich>=13.9",
+    "sse-starlette>=2.2",
+    "peft>=0.14",
+    "matplotlib>=3.9",
+]
+
+[project.optional-dependencies]
+# Not installed by default and not installable on this machine's Turing GPU;
+# kept so the production vLLM path can be exercised on Ampere+ hardware.
+vllm = ["vllm>=0.8"]
+
+[project.urls]
+Homepage = "https://github.com/sripadha/turboserve"
+Repository = "https://github.com/sripadha/turboserve"
+
+[project.scripts]
+turboserve = "turboserve.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "pytest-timeout>=2.3",
+    "ruff>=0.9",
+    "mypy>=1.14",
+    "types-PyYAML>=6",
+    "pre-commit>=4",
+]
+
+# ---------------------------------------------------------------------------
+# uv: torch is resolved from the CUDA 12.4 wheel index. `explicit = true` means
+# the index is used ONLY for packages that name it in [tool.uv.sources], so
+# everything else still comes from PyPI.
+# ---------------------------------------------------------------------------
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu124" }]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/turboserve"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/turboserve", "tests", "configs", "docs", "README.md", "LICENSE"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests", "scripts"]
+extend-exclude = [".venv", "results"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "W"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["turboserve"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true
+exclude = ["^tests/", "^\\.venv/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: loads a real (non-tiny) model or otherwise takes minutes",
+    "gpu: requires a CUDA device",
+]
+addopts = "-m \"not slow and not gpu\" -ra --timeout 600"
+asyncio_mode = "auto"
