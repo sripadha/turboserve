@@ -210,9 +210,9 @@ replaces it with a measured one.
 
 <!-- results:start -->
 
-**Hardware:** 1x NVIDIA H100 80GB HBM3 · driver 570.86.16 · CUDA 12.8 · torch 2.6.0+cu124 · vllm 0.11.0 · $2.49/GPU-hour (vast.ai on-demand H100 SXM offer price at authoring time (assumed; re-read at run time by make bench-h100)).
+**Hardware:** 1x NVIDIA H100 80GB HBM3 · driver 570.86.16 · CUDA 12.8 · torch 2.6.0+cu124 · vllm 0.11.0 · sglang 0.5.3 · $2.49/GPU-hour (vast.ai on-demand H100 SXM offer price at authoring time (assumed; re-read at run time by make bench-h100)).
 
-**Suite:** 99 run(s) across 5 scenario(s), 6h 37m from the first run's start to the last one's finish — about $16.49 of GPU time at $2.49/hour.
+**Suite:** 104 run(s) across 5 scenario(s), 6h 47m from the first run's start to the last one's finish — about $16.90 of GPU time at $2.49/hour.
 
 ### `naive_vs_cb`
 
@@ -224,6 +224,9 @@ replaces it with a measured one.
 | naive | 32 | 256 | 0.0000 | 267130.4 | 267130.4 | — | — | 267130.4 | 34.5 | 0.12 | 20.048 |
 | naive | 64 | 256 | 0.0000 | 534260.9 | 534260.9 | — | — | 534260.9 | 34.5 | 0.12 | 20.048 |
 | naive | 128 | 256 | 0.0000 | 1068521.7 | 1068521.7 | — | — | 1068521.7 | 34.5 | 0.12 | 20.048 |
+| SGLang | 32 | 256 | 0.0000 | 73.6 | 184.0 | 19.24 | 22.20 | 6464.4 | 1455.5 | 5.05 | 0.475 |
+| SGLang | 64 | 256 | 0.0000 | 126.0 | 288.0 | 19.49 | 22.51 | 6610.1 | 2833.3 | 9.84 | 0.244 |
+| SGLang | 128 | 256 | 0.0000 | 228.8 | 396.0 | 30.45 | 35.39 | 10396.8 | 3530.9 | 12.26 | 0.196 |
 | static batch | 32 | 256 | 0.0000 | 28012.2 | 28012.2 | — | — | 28012.2 | 329.0 | 1.14 | 2.102 |
 | static batch | 64 | 256 | 0.0000 | 35242.8 | 35242.8 | — | — | 35242.8 | 523.0 | 1.82 | 1.322 |
 | static batch | 128 | 256 | 0.0000 | 49481.9 | 49481.9 | — | — | 49481.9 | 745.0 | 2.59 | 0.928 |
@@ -231,13 +234,14 @@ replaces it with a measured one.
 | vLLM | 64 | 256 | 0.0000 | 140.0 | 320.0 | 20.43 | 23.60 | 6939.9 | 2697.8 | 9.37 | 0.256 |
 | vLLM | 128 | 256 | 0.0000 | 260.0 | 450.0 | 32.53 | 37.80 | 11121.0 | 3299.9 | 11.46 | 0.210 |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 6878fdc. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 5af9506. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `naive` at concurrency 64:
 
 | Arm vs baseline | Output tok/s | Req/s | TTFT p50 | TTFT p95 | ITL p95 | E2E p95 | USD / 1M out |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | continuous batching | 46.93x | 46.93x | -100.0% | -99.9% | — | -97.8% | 0.02x |
+| SGLang | 82.12x | 82.12x | -100.0% | -99.9% | — | -98.8% | 0.01x |
 | static batch | 15.16x | 15.16x | -93.4% | -93.4% | — | -93.4% | 0.07x |
 | vLLM | 78.20x | 78.20x | -100.0% | -99.9% | — | -98.7% | 0.01x |
 
@@ -247,9 +251,10 @@ Relative to `static batch` at concurrency 64:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | continuous batching | 3.10x | 3.10x | -99.5% | -98.8% | — | -67.2% | 0.32x |
 | naive | 0.07x | 0.07x | +1415.9% | +1415.9% | — | +1415.9% | 15.16x |
+| SGLang | 5.42x | 5.42x | -99.6% | -99.2% | — | -81.2% | 0.18x |
 | vLLM | 5.16x | 5.16x | -99.6% | -99.1% | — | -80.3% | 0.19x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 6878fdc. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 5af9506. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 The other scenarios — `chaos`, `multi_lora`, `prefix_cache`, `spec_decode` — are in [docs/results.md](docs/results.md), with the plots and the raw records behind every row.
 
