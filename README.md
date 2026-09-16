@@ -4,10 +4,10 @@
 
 A from-scratch reference LLM engine — continuous batching, paged KV cache with automatic
 prefix caching, speculative decoding, batched multi-LoRA — behind an OpenAI-compatible
-multi-tenant gateway with SLO-gated canaries and chaos testing, with a vLLM + Kubernetes
-path for production. The reference engine and vLLM are both first-class backends of the same
-gateway, and every benchmark measures them side by side with identical prompts, identical
-load shapes and identical percentile code.
+multi-tenant gateway with SLO-gated canaries and chaos testing, with a Kubernetes path for
+production on either of two engines. The reference engine, vLLM and SGLang are all
+first-class backends of the same gateway, and every benchmark measures them side by side
+with identical prompts, identical load shapes and identical percentile code.
 
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![python](https://img.shields.io/badge/python-3.12-blue.svg)
@@ -32,7 +32,8 @@ load shapes and identical percentile code.
   adapters and the base model.
 - **Baselines to measure against**: `NaiveHFEngine` (one request at a time) and
   `StaticBatchHFEngine` (pad to a batch, wait for the longest), driven through the same
-  interface.
+  interface — and, at the other end, vLLM and SGLang through the same OpenAI-compatible
+  backend the production path uses (`deploy/vllm/`, `deploy/sglang/`).
 
 **Gateway** (`src/turboserve/gateway/`)
 
@@ -42,6 +43,9 @@ load shapes and identical percentile code.
   gate, with a computed `Retry-After`; per-tenant model allow-lists and adapter names.
 - Lane-aware weighted routing with health caching, retry **before the first byte only**,
   and per-tenant Prometheus metrics including attributed spend.
+- Engine-agnostic by construction: a pool can mix vLLM and SGLang replicas, so moving a
+  model between engines is a weight in `configs/models.yaml` and, if you want it gated, a
+  canary lane.
 
 **Delivery** (`src/turboserve/canary/`, `src/turboserve/chaos/`)
 
@@ -58,8 +62,8 @@ load shapes and identical percentile code.
   definition for the whole repository, versioned result JSON with hardware, software
   versions, git sha and `$/GPU-hour`.
 - Five scenarios, a Helm chart with HPA/PDB/ServiceMonitor/PrometheusRule/Grafana/canary
-  lanes, kustomize overlays, and a kind end-to-end run that kills pods while asserting an
-  error-rate bound.
+  lanes and `engine.mode: mock|reference|vllm|sglang`, kustomize overlays, and a kind
+  end-to-end run that kills pods while asserting an error-rate bound.
 
 ## Architecture
 
@@ -73,7 +77,7 @@ flowchart LR
   end
 
   router --> local["LocalEngineBackend<br/>in-process AsyncLLMEngine"]
-  router --> compat["OpenAICompatBackend<br/>vLLM or TGI over HTTP"]
+  router --> compat["OpenAICompatBackend<br/>vLLM, SGLang or TGI over HTTP"]
   router --> mock["MockBackend<br/>tests, chaos, kind e2e"]
 
   subgraph eng["reference engine — step loop"]

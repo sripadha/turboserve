@@ -171,11 +171,12 @@ jobs:
           kubeconform -v
 
       # `make k8s-lint` is the same command a developer runs locally, so the manifests
-      # cannot pass here and fail there. It does: helm lint; three `helm template |
-      # kubeconform` renders (defaults, the production vLLM + canary + monitoring shape, and
-      # the Argo Rollouts variant -- most of the chart is conditional, and a template that is
-      # never rendered is never validated); both kustomize overlays; the Chaos Mesh
-      # manifests; and a shell-syntax pass over every script under deploy/ and scripts/.
+      # cannot pass here and fail there. It does: helm lint; four `helm template |
+      # kubeconform` renders (defaults, the production vLLM + canary + monitoring shape, the
+      # production SGLang shape with speculative decoding and multi-LoRA, and the Argo
+      # Rollouts variant -- most of the chart is conditional, and a template that is never
+      # rendered is never validated); both kustomize overlays; the Chaos Mesh manifests; and
+      # a shell-syntax pass over every script under deploy/ and scripts/.
       #
       # -ignore-missing-schemas is required and is scoped to what it says: ServiceMonitor,
       # PrometheusRule and Rollout are custom resources whose schemas are not part of
@@ -194,7 +195,11 @@ jobs:
           helm template turboserve deploy/helm/turboserve \
             --set canary.enabled=true --set canary.argoRollouts.enabled=true >/dev/null 2>&1
           test $? -ne 0 || { echo "canary.enabled + argoRollouts.enabled should have failed"; exit 1; }
-          echo "both invalid combinations were rejected"
+          helm template turboserve deploy/helm/turboserve --set engine.mode=sglang \
+            --set engine.sglang.speculative.enabled=true \
+            --set engine.sglang.speculative.draftModel= >/dev/null 2>&1
+          test $? -ne 0 || { echo "EAGLE without a draft model should have failed"; exit 1; }
+          echo "every invalid combination was rejected"
 
       - name: Parse every YAML asset
         run: |
@@ -210,6 +215,8 @@ jobs:
               pathlib.Path("deploy/prometheus/rules.yaml"),
               pathlib.Path("deploy/prometheus/prometheus.yml"),
               pathlib.Path("deploy/kind/kind-config.yaml"),
+              pathlib.Path("deploy/vllm/values-h100.yaml"),
+              pathlib.Path("deploy/sglang/values-h100.yaml"),
               *pathlib.Path("deploy/grafana/provisioning").rglob("*.yaml"),
           ]
           failed = False

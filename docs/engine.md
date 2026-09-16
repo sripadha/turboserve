@@ -355,7 +355,9 @@ invalidate them.
   require fixed batch shapes, which conflicts with continuous batching's variable ones.
 - **No tensor, pipeline or data parallelism.** One process, one device. `deploy/` scales by
   running more gateway and engine replicas, and the production path for a model that does not
-  fit on one GPU is vLLM, which is a first-class gateway backend.
+  fit on one GPU is vLLM or SGLang, both of which are first-class gateway backends (their
+  tensor-parallel size is one chart value: `engine.vllm.tensorParallelSize`,
+  `engine.sglang.tpSize`).
 - **The activation headroom is an estimate, not a profile.** See above for why. A
   configuration with an unusually large `max_num_batched_tokens` on a nearly full device
   should set `num_blocks` explicitly or lower `gpu_memory_utilization`.

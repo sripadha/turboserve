@@ -76,14 +76,34 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{/*
-Whether a separate engine workload exists. Only `vllm` mode has one: `mock` runs the mock
-backend inside the gateway process and `reference` runs the from-scratch engine there, so
-in both of those the gateway pod *is* the engine pod. Everything that has to know where
-the engine lives -- the chaos loop's pod selector, the NetworkPolicy, the Grafana
-dashboard's backend panel -- derives from this one predicate.
+Whether a separate engine workload exists. The two production modes have one -- `vllm` and
+`sglang` -- while `mock` runs the mock backend inside the gateway process and `reference`
+runs the from-scratch engine there, so in both of those the gateway pod *is* the engine
+pod. Everything that has to know where the engine lives -- the chaos loop's pod selector,
+the NetworkPolicy, the Grafana dashboard's backend panel -- derives from this one
+predicate, which is why adding a second production engine changed no template but the
+engine Deployment's own argv.
 */}}
 {{- define "turboserve.engine.standalone" -}}
-{{- if eq .Values.engine.mode "vllm" -}}true{{- end -}}
+{{- if has .Values.engine.mode (list "vllm" "sglang") -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+The engine container image.
+
+`engine.image.repository` overrides everything, for a mirror or a digest pin. Left empty
+(the default) the image follows `engine.mode`, so switching engines is one value rather
+than three that have to be kept consistent -- a vLLM image started with SGLang's argv fails
+in a way that looks like a bad flag rather than like the wrong container.
+*/}}
+{{- define "turboserve.engine.image" -}}
+{{- if .Values.engine.image.repository -}}
+{{- printf "%s:%s" .Values.engine.image.repository .Values.engine.image.tag -}}
+{{- else if eq .Values.engine.mode "sglang" -}}
+{{- printf "%s:%s" .Values.engine.sglang.image.repository .Values.engine.sglang.image.tag -}}
+{{- else -}}
+{{- printf "%s:%s" .Values.engine.vllm.image.repository .Values.engine.vllm.image.tag -}}
+{{- end -}}
 {{- end -}}
 
 {{/* In-cluster base URL of the engine's OpenAI-compatible API. */}}
@@ -103,6 +123,9 @@ flag is therefore:
   reference  --engine config          pools from models.yaml; a `local` backend there is
                                       the from-scratch engine running in this pod
   vllm       --engine <engine URL>    the in-cluster vLLM Service
+  sglang     --engine <engine URL>    the in-cluster SGLang Service -- the same flag with
+                                      the same value, because the gateway speaks to both
+                                      over the same OpenAI-compatible API
 
 Host, port, tenants and models are passed as flags rather than through TURBOSERVE_* env:
 `serve` constructs its Settings with those four values explicitly, so an environment
@@ -110,7 +133,7 @@ variable for them would be read and then overridden, which is worse than not set
 Override the whole line with `gateway.args`.
 */}}
 {{- define "turboserve.gateway.engineArg" -}}
-{{- if eq .Values.engine.mode "vllm" -}}
+{{- if include "turboserve.engine.standalone" . -}}
 {{- include "turboserve.engine.url" . -}}
 {{- else if eq .Values.engine.mode "reference" -}}
 config
@@ -280,8 +303,8 @@ half-works. Each check is one a reviewer would otherwise have to make by reading
 */}}
 {{- define "turboserve.validateValues" -}}
 {{- $mode := .Values.engine.mode -}}
-{{- if not (has $mode (list "mock" "reference" "vllm")) -}}
-{{- fail (printf "engine.mode must be one of mock|reference|vllm, got %q" $mode) -}}
+{{- if not (has $mode (list "mock" "reference" "vllm" "sglang")) -}}
+{{- fail (printf "engine.mode must be one of mock|reference|vllm|sglang, got %q" $mode) -}}
 {{- end -}}
 {{- if and .Values.canary.enabled .Values.canary.argoRollouts.enabled -}}
 {{- fail "canary.enabled and canary.argoRollouts.enabled are mutually exclusive: a Rollout owns its own pods, so the two would fight over the same lane labels" -}}
@@ -294,6 +317,14 @@ half-works. Each check is one a reviewer would otherwise have to make by reading
 {{- end -}}
 {{- if and (eq $mode "vllm") .Values.engine.vllm.speculative.enabled (not .Values.engine.vllm.speculative.model) -}}
 {{- fail "engine.vllm.speculative.enabled requires engine.vllm.speculative.model" -}}
+{{- end -}}
+{{- if and (eq $mode "sglang") .Values.engine.sglang.speculative.enabled -}}
+{{- if not .Values.engine.sglang.speculative.algorithm -}}
+{{- fail "engine.sglang.speculative.enabled requires engine.sglang.speculative.algorithm (EAGLE or NEXTN)" -}}
+{{- end -}}
+{{- if and (eq .Values.engine.sglang.speculative.algorithm "EAGLE") (not .Values.engine.sglang.speculative.draftModel) -}}
+{{- fail "engine.sglang.speculative.algorithm=EAGLE requires engine.sglang.speculative.draftModel: EAGLE drafts from a checkpoint, unlike NEXTN which uses the target's own head" -}}
+{{- end -}}
 {{- end -}}
 {{- if and .Values.gateway.autoscaling.enabled .Values.gateway.pdb.enabled .Values.gateway.pdb.maxUnavailable (eq (int .Values.gateway.autoscaling.minReplicas) 1) -}}
 {{- fail "a PodDisruptionBudget with maxUnavailable and autoscaling.minReplicas=1 blocks every voluntary eviction; raise minReplicas or use pdb.minAvailable" -}}

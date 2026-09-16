@@ -61,8 +61,8 @@ Provenance = Literal["measured", "projected"]
 PERCENTILE_QUANTILES: tuple[float, ...] = (50.0, 90.0, 95.0, 99.0)
 
 #: Packages whose versions are recorded with every run. A missing package is recorded as
-#: ``None`` rather than omitted, so a run made without vLLM is distinguishable from an
-#: older file that never looked.
+#: ``None`` rather than omitted, so a run made without one of the production engines
+#: installed is distinguishable from an older file that never looked.
 SOFTWARE_PACKAGES: tuple[str, ...] = (
     "turboserve",
     "torch",
@@ -71,6 +71,7 @@ SOFTWARE_PACKAGES: tuple[str, ...] = (
     "fastapi",
     "httpx",
     "vllm",
+    "sglang",
 )
 
 NS_PER_MS = 1_000_000

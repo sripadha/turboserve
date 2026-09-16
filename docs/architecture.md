@@ -2,8 +2,8 @@
 
 turboserve is one Python package with five layers. Each layer is useful on its own and
 talks to the next through a small, typed contract, which is why the same gateway can front
-a from-scratch engine and a production vLLM server, and why the same benchmark harness can
-measure both.
+a from-scratch engine and a production server — vLLM or SGLang — and why the same benchmark
+harness can measure all of them.
 
 | Layer | Package | What it owns |
 | --- | --- | --- |
@@ -11,7 +11,7 @@ measure both.
 | Engine | `turboserve.engine` | Continuous batching, paged KV cache with prefix caching, Qwen2/Llama with paged attention, speculative decoding, batched multi-LoRA |
 | Delivery | `turboserve.canary`, `turboserve.chaos` | SLO-gated progressive rollout; fault injection and the chaos harness |
 | Measurement | `turboserve.bench` | Load generation, per-request records, the five scenarios, rendered result pages |
-| Deployment | `deploy/` | Helm chart, kustomize overlays, kind end-to-end, Prometheus rules, Grafana dashboard, the production vLLM path |
+| Deployment | `deploy/` | Helm chart, kustomize overlays, kind end-to-end, Prometheus rules, Grafana dashboard, the production paths (`deploy/vllm/`, `deploy/sglang/`) |
 
 The contracts between them are written down once, in
 [`contracts.md`](contracts.md): `SamplingParams`, `AttnMetadata`, `LoRAContext`,
@@ -41,7 +41,7 @@ flowchart LR
   end
 
   router --> local["LocalEngineBackend"]
-  router --> compat["OpenAICompatBackend<br/>vLLM / TGI over HTTP"]
+  router --> compat["OpenAICompatBackend<br/>vLLM / SGLang / TGI over HTTP"]
   router --> mock["MockBackend<br/>tests, chaos, kind e2e"]
 
   local --> engine["AsyncLLMEngine"]
@@ -209,7 +209,7 @@ flowchart TB
 
     dep --> esvc["Service: turboserve-engine"]
     depC --> esvc
-    esvc --> edep["Deployment: turboserve-engine<br/>mode: vllm | reference | mock<br/>nvidia.com/gpu: 1"]
+    esvc --> edep["Deployment: turboserve-engine<br/>mode: vllm | sglang | reference | mock<br/>nvidia.com/gpu: 1"]
 
     cm["ConfigMap: models.yaml"] -.-> dep
     sec["Secret: tenants.yaml<br/>sha256 key digests"] -.-> dep
@@ -247,15 +247,15 @@ operations.
 ## 6. How the pieces are measured
 
 Every scenario drives load through the *same* `Backend` protocol the gateway uses, so the
-reference engine, a naive `transformers.generate` baseline and a real vLLM server are
-measured by identical client code and identical percentile definitions.
+reference engine, a naive `transformers.generate` baseline and a real vLLM or SGLang server
+are measured by identical client code and identical percentile definitions.
 
 ```mermaid
 flowchart LR
   P["profiles.yaml<br/>h100 / dev-2060"] --> S["scenario<br/>naive_vs_cb, prefix_cache,<br/>spec_decode, multi_lora, chaos"]
   PR["prompts.py<br/>seeded synthetic token ids"] --> S
   S --> LG["loadgen.py<br/>closed loop / Poisson open loop"]
-  LG --> B["Backend<br/>reference | vllm | naive | mock"]
+  LG --> B["Backend<br/>reference | vllm | sglang | naive | mock"]
   B --> REC["RequestRecord<br/>t_send_ns, t_first_ns, itl_ns, t_last_ns"]
   REC --> RR["RunResult<br/>hardware, software, git sha,<br/>$/GPU-hour, provenance"]
   RR --> JSON[("results/&lt;scenario&gt;/*.json")]

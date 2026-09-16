@@ -5,9 +5,9 @@ it. Three ways to run the same system, in increasing order of realism:
 
 | Path | What it is | Where it is tested |
 | --- | --- | --- |
-| `docker-compose.yml` | One box: gateway, vLLM, Prometheus, Grafana | by hand; the compose file is parsed in CI |
+| `docker-compose.yml` | One box: gateway, vLLM or SGLang, Prometheus, Grafana | by hand; the compose file is parsed in CI |
 | `deploy/kustomize/` | Plain manifests, no Helm | `kubectl kustomize` + kubeconform in CI |
-| `deploy/helm/turboserve/` | The full chart: lanes, HPA, monitoring, vLLM engine, adapters | `helm lint`, kubeconform, and a kind cluster in CI |
+| `deploy/helm/turboserve/` | The full chart: lanes, HPA, monitoring, a vLLM or SGLang engine, adapters | `helm lint`, kubeconform, and a kind cluster in CI |
 
 ```mermaid
 flowchart LR
@@ -17,7 +17,7 @@ flowchart LR
   gsvc --> gcanary[gateway pods<br/>lane=canary]
   gstable --> esvc[["Service<br/>engine"]]
   gcanary --> esvc
-  esvc --> vllm[vLLM pods<br/>nvidia.com/gpu: 1]
+  esvc --> vllm["engine pods: vLLM or SGLang<br/>nvidia.com/gpu: 1"]
   gstable -. /metrics .-> prom[(Prometheus)]
   gcanary -. /metrics .-> prom
   prom --> rules[PrometheusRule<br/>SLO alerts]
@@ -35,22 +35,34 @@ flowchart LR
 | `mock` | gateway only | none | Exercising the Kubernetes objects, routing, quotas, canary and chaos paths on a cluster with no accelerators. This is what the kind job uses. |
 | `reference` | gateway only, holding the from-scratch engine in-process | on the gateway pods | Reading and debugging the engine inside a cluster. |
 | `vllm` | gateway + a separate vLLM Deployment and Service | on the engine pods | Production. See [`deploy/vllm/README.md`](../deploy/vllm/README.md). |
+| `sglang` | gateway + a separate SGLang Deployment and Service | on the engine pods | Production. The same objects with a different image and argv. See [`deploy/sglang/README.md`](../deploy/sglang/README.md). |
 
 `engine.mode` maps onto the one flag `turboserve gateway serve` actually takes:
 `mock` renders `--engine mock`, `reference` renders `--engine config` (the pools come from
-`models.yaml`, where a `local` backend is the from-scratch engine in this pod), and `vllm`
-renders `--engine http://<release>-engine:8000/v1`. Host, port, tenants and models are
-passed as flags, not as `TURBOSERVE_*` environment variables, because `serve` constructs its
-`Settings` with those four values explicitly and would override the environment.
+`models.yaml`, where a `local` backend is the from-scratch engine in this pod), and the two
+production modes render `--engine http://<release>-engine:<port>/v1` — the *same* flag with
+the same kind of value, because the gateway reaches either engine over the same
+OpenAI-compatible API. Host, port, tenants and models are passed as flags, not as
+`TURBOSERVE_*` environment variables, because `serve` constructs its `Settings` with those
+four values explicitly and would override the environment.
+
+`vllm` and `sglang` render the same Deployment, Service, PVC and NetworkPolicy; only the
+container's image and argv differ, and both come from `engine.<mode>` in values. Everything
+that has to know whether a separate engine workload exists asks one helper
+(`turboserve.engine.standalone`), which is why the second production engine changed no
+template but the engine container's own argument list. The image follows `engine.mode`
+unless `engine.image.repository` overrides it, so a vLLM image cannot be started with
+SGLang's flags by forgetting a value.
 
 In `mock` and `reference` the gateway pod *is* the engine pod, which is why the chaos loop
-in `deploy/kind/e2e.sh` selects `app.kubernetes.io/component=gateway`; with
-`engine.mode=vllm` the same loop is pointed at `component=engine`.
+in `deploy/kind/e2e.sh` selects `app.kubernetes.io/component=gateway`; in either production
+mode the same loop is pointed at `component=engine`.
 
 Splitting the gateway from the engine in production buys three things: the GPU tier scales
 independently of the request-handling tier, a gateway rollout does not restart a process
-holding tens of gigabytes of KV cache, and the engine image is upstream vLLM rather than
-anything built here — its version is a value, not a rebuild.
+holding tens of gigabytes of KV cache, and the engine image is an upstream release —
+`vllm/vllm-openai` or `lmsysorg/sglang`, both pinned — rather than anything built here, so
+its version is a value, not a rebuild.
 
 ## Lanes and progressive delivery
 
@@ -197,7 +209,8 @@ has just scaled in has cold connection pools to every backend.
 
 - Pods run as uid 10001, non-root, with `RuntimeDefault` seccomp, all capabilities dropped
   and no privilege escalation. The gateway's root filesystem is read-only, with an in-memory
-  `emptyDir` at `/tmp`; the engine's is not, because vLLM writes a compile cache at startup.
+  `emptyDir` at `/tmp`; the engine's is not, because both production engines write a
+  compile cache at startup.
 - `automountServiceAccountToken: false` everywhere. Nothing in this chart calls the
   Kubernetes API, so there is no Role and no RoleBinding either.
 - Tenant data is a Secret (quotas and sha256 key hashes), model data a ConfigMap (routing
@@ -205,8 +218,9 @@ has just scaled in has cold connection pools to every backend.
   editing a quota rolls the pods instead of leaving them on a file that no longer exists.
 - `networkPolicy.enabled=true` default-denies both components and then allows exactly:
   clients to the gateway, the monitoring namespace to the metrics port, gateway to engine,
-  and DNS. The engine policy is the one that matters — vLLM has no notion of a tenant, so
-  anything that can reach it directly bypasses authentication, quotas and accounting.
+  and DNS. The engine policy is the one that matters — neither vLLM nor SGLang has any
+  notion of a tenant, so anything that can reach one directly bypasses authentication,
+  quotas and accounting.
 
 The chart's default tenants Secret follows the schema
 `src/turboserve/gateway/tenants.py` reads (`version`, then tenants with `keys_sha256`
@@ -347,12 +361,15 @@ carries a query.
 - **Nothing here has been applied to a cluster from a development checkout.** The manifests
   are validated statically with `helm lint` and kubeconform by `make k8s-lint`, and
   end-to-end on GitHub's runners by the kind workflow.
-- The kind job runs `engine.mode=mock`. The `vllm` and `reference` modes are validated as
-  rendered manifests only; there is no GPU in hosted CI.
+- The kind job runs `engine.mode=mock`. The `vllm`, `sglang` and `reference` modes are
+  validated as rendered manifests only; there is no GPU in hosted CI. `make k8s-lint`
+  renders both production modes from the values file each ships with.
 - Exact canary weights need Argo Rollouts. Without it the split is replica-proportional,
   which is stated wherever `canary.weight` appears.
 - The queue-depth HPA needs a custom-metrics adapter that this chart does not install.
 - The adapter-sync init container defaults to `aws s3 sync`. Other object stores work by
   replacing `engine.adapters.sync.image`/`command`/`args`; nothing about the volume changes.
-- `docker-compose.yml`'s `gpu` profile needs an NVIDIA GPU and the container toolkit. The
-  default profile (mock engine) needs neither and is the one to reach for first.
+- `docker-compose.yml`'s `gpu` and `sglang` profiles need an NVIDIA GPU and the container
+  toolkit, and they are two profiles rather than two services because one GPU fits one of
+  them at a time. The default profile (mock engine) needs neither and is the one to reach
+  for first.

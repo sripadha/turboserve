@@ -126,6 +126,11 @@ k8s-lint: ## helm lint + helm template | kubeconform + kustomize build (needs he
 		--set engine.adapters.sync.sourceUrl=s3://example-bucket/adapters \
 		--set gateway.autoscaling.queueDepth.enabled=true \
 		| $(KUBECONFORM) -strict -summary -ignore-missing-schemas
+	$(HELM) template turboserve $(CHART) \
+		-f deploy/sglang/values-h100.yaml \
+		--set engine.sglang.speculative.enabled=true \
+		--set engine.sglang.lora.paths='{acme=/adapters/acme}' \
+		| $(KUBECONFORM) -strict -summary -ignore-missing-schemas
 	$(HELM) template turboserve $(CHART) --set canary.argoRollouts.enabled=true \
 		| $(KUBECONFORM) -strict -summary -ignore-missing-schemas
 	@for overlay in deploy/kustomize/overlays/*/; do \
@@ -133,7 +138,7 @@ k8s-lint: ## helm lint + helm template | kubeconform + kustomize build (needs he
 		$(KUBECTL) kustomize "$$overlay" | $(KUBECONFORM) -strict -summary -ignore-missing-schemas; \
 	done
 	$(KUBECONFORM) -strict -summary -ignore-missing-schemas src/turboserve/chaos/k8s/podchaos.yaml
-	@for script in deploy/kind/e2e.sh deploy/vllm/launch.sh scripts/*.sh scripts/vastai/*.sh; do \
+	@for script in deploy/kind/e2e.sh deploy/vllm/launch.sh deploy/sglang/launch.sh scripts/*.sh scripts/vastai/*.sh; do \
 		bash -n "$$script" && echo "ok  $$script"; \
 	done
 

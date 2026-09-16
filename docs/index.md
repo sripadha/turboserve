@@ -3,7 +3,8 @@
 turboserve serves many tenants from one GPU pool. It contains a from-scratch reference LLM
 engine (continuous batching, paged KV cache with automatic prefix caching, speculative
 decoding, batched multi-LoRA), an OpenAI-compatible multi-tenant gateway with SLO-gated
-canaries and chaos testing, and a vLLM + Kubernetes production deployment path.
+canaries and chaos testing, and a Kubernetes production deployment path with two
+interchangeable production engines behind it — vLLM and SGLang.
 
 Every behavioural claim on these pages is backed by code under `src/turboserve/` or by a
 test under `tests/`; every number is rendered from a result file under `results/`.
@@ -50,7 +51,7 @@ test under `tests/`; every number is rendered from a result file under `results/
 
 | Page | Contents |
 | --- | --- |
-| [`adr/`](adr/README.md) | Six architecture decision records: reference engine alongside vLLM, recompute vs swap preemption, hashed prefix cache, rejection-sampling verification, SGMV grouping for LoRA, canary SLO thresholds |
+| [`adr/`](adr/README.md) | Six architecture decision records: reference engine alongside vLLM (with an addendum on the engine-agnostic gateway), recompute vs swap preemption, hashed prefix cache, rejection-sampling verification, SGMV grouping for LoRA, canary SLO thresholds |
 
 ## Reading order
 

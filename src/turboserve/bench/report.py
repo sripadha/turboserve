@@ -244,8 +244,9 @@ def hardware_line(results: Sequence[RunResult]) -> str:
     machine and at what price, which is the other half a reader needs before comparing a
     throughput or a cost column against anything else. Everything in it is read out of the
     result files' own hardware and software blocks -- the GPU name and count, the driver and
-    CUDA versions, the torch and vLLM versions, and the $/GPU-hour with its source -- and a
-    field no run recorded is simply left out rather than guessed at.
+    CUDA versions, the torch and serving-engine versions, and the $/GPU-hour with its source
+    -- and a field no run recorded is simply left out rather than guessed at. A page whose
+    runs were all served by one engine therefore names one engine.
     """
     if not results:
         return ""
@@ -280,7 +281,7 @@ def hardware_line(results: Sequence[RunResult]) -> str:
     )
     if cuda:
         parts.append(f"CUDA {cuda}")
-    for package in ("torch", "vllm"):
+    for package in ("torch", "vllm", "sglang"):
         version = _first([result.software.get(package) for result in results])
         if version:
             parts.append(f"{package} {version}")

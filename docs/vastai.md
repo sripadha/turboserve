@@ -44,13 +44,27 @@ make results                             # render tables and plots from the JSON
 is no nested Docker inside it. So neither the Helm chart nor `docker-compose.yml` can be
 used on vast.ai. vLLM is pip-installed into the instance (`uv sync --extra vllm`) and
 started with [`deploy/vllm/launch.sh`](../deploy/vllm/launch.sh), with the gateway running
-as a process beside it. Measuring a different engine — TGI, Triton — means renting a second
+as a process beside it.
+
+The second production engine is reached the same way. This repository ships **no `sglang`
+extra** — `uv.lock` is the resolution every CPU test run installs, and a second heavyweight
+engine in it would change that environment for everyone — so SGLang is installed into the
+instance beside the project environment (`uv pip install "sglang[all]"`), or the instance is
+rented from the pinned `lmsysorg/sglang:v0.5.3` image instead of the pytorch one, and
+started with [`deploy/sglang/launch.sh`](../deploy/sglang/launch.sh). Either way the
+benchmark harness only ever needs its URL: `SGLANG_URL` (and `SGLANG_BASELINE_URL` for the
+prefix-cache control server) enable its arms, exactly as `VLLM_URL` enables vLLM's. See
+[`deploy/sglang/README.md`](../deploy/sglang/README.md).
+
+Measuring an engine this repository does not deploy — TGI, Triton — means renting a second
 instance from that engine's official image, not running a second container.
 
 The image is pinned to `pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel`. The repository's torch
 is a cu124 wheel; an image on a different CUDA minor either refuses to load it or silently
 falls back to something slower, and either way the measurement is no longer the one that was
-intended.
+intended. The same care applies to an engine image chosen instead of it: pin the tag, and
+record it — `turboserve bench` copies whatever the server reports on `/version` and
+`/get_server_info` into every result file that server produced.
 
 **The price is per instance and belongs in the results.** `provision.sh` records the
 instance's `dph_total` in its state file. `run_remote.sh` exports it as
@@ -69,6 +83,16 @@ which is an order of magnitude faster than a home connection. Gated repositories
 **ssh is the only interface, on a non-standard port.** Every script takes
 `-p $VAST_SSH_PORT`. `provision.sh` asks for a direct endpoint (`--ssh --direct`) rather than
 the vast.ai proxy, because rsync over the proxy is slow enough to be worth avoiding.
+
+**Two engines, two servers, one client.** The suite measures whichever production servers
+are reachable, in separate invocations: `naive-vs-cb --arm vllm --url ...`, then
+`naive-vs-cb --arm sglang --url ...`, and the same split for `prefix-cache`, whose control
+arm is a second server per engine because on both of them the prefix cache is a launch flag.
+One `--url` is one server, so a row can always be traced to the process that produced it.
+`scripts/run_all_benchmarks.sh` does this from `VLLM_URL`, `VLLM_BASELINE_URL`, `SGLANG_URL`
+and `SGLANG_BASELINE_URL`; whichever are unset simply skip their arms. Running both engines
+at once on one 80 GB card is not the plan — each wants most of the device for weights and KV
+cache, so they are started one after the other.
 
 **`ncu` may not work.** Nsight Systems (`nsys`) works inside containers. Nsight Compute's
 hardware counters usually need `NVreg_RestrictProfilingToAdminUsers=0` set on the *host*,

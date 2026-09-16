@@ -10,8 +10,13 @@
 #              the LoRA adapters volume.
 #   vllm       gateway Deployment (CPU) plus a separate engine Deployment running vLLM's
 #              OpenAI server. The gateway routes to it over the engine Service. This is
-#              the production path: two failure domains, independent scaling, and the
+#              a production path: two failure domains, independent scaling, and the
 #              engine image is upstream vLLM rather than anything built here.
+#   sglang     the same two-workload shape with SGLang's OpenAI server instead, on the
+#              official lmsysorg/sglang image. The second production path: the gateway,
+#              the lanes, the probes and the NetworkPolicy are identical, because both
+#              engines are reached over the same OpenAI-compatible API -- only the engine
+#              container's image and argv differ. See deploy/sglang/README.md.
 #
 # Every value below is consumed by a template in templates/; nothing here is decorative.
 
@@ -168,25 +173,38 @@ gateway:
     maxUnavailable: null
 
 engine:
-  # mock | reference | vllm  (see the header of this file)
+  # mock | reference | vllm | sglang  (see the header of this file)
   mode: mock
 
   # Model served. In mock mode it is only the name reported by /v1/models.
   model: Qwen/Qwen2.5-7B-Instruct
 
-  # --- separate vLLM Deployment (engine.mode == "vllm" only) -------------------------
+  # --- separate engine Deployment (engine.mode == "vllm" or "sglang") ----------------
   replicaCount: 1
+  # An override for a mirror or a digest pin. Left empty, the image follows engine.mode:
+  # engine.vllm.image or engine.sglang.image below. One value decides the engine, so a
+  # vLLM image can never be started with SGLang's argv.
   image:
-    repository: vllm/vllm-openai
-    tag: v0.11.0
+    repository: ""
+    tag: ""
     pullPolicy: IfNotPresent
   service:
+    # The port the engine container listens on and the Service publishes. 8000 is vLLM's
+    # default; SGLang's own default is 30000 and deploy/sglang/values-h100.yaml sets it,
+    # but the port is always passed to the server explicitly, so either value works for
+    # either engine.
     port: 8000
     annotations: {}
 
-  # vLLM server flags. Each maps to one command-line argument; see deploy/vllm/README.md
-  # for what each one buys and deploy/vllm/values-h100.yaml for a filled-in H100 profile.
+  # vLLM server flags (engine.mode == "vllm"). Each maps to one command-line argument; see
+  # deploy/vllm/README.md for what each one buys and deploy/vllm/values-h100.yaml for a
+  # filled-in H100 profile.
   vllm:
+    image:
+      repository: vllm/vllm-openai
+      # Pinned, not floating: a minor release can change scheduling and invalidate any
+      # comparison made against an earlier run. The version lands in every result file.
+      tag: v0.11.0
     maxModelLen: 8192
     gpuMemoryUtilization: 0.90
     # Automatic prefix caching: reuse the KV blocks of a shared prompt prefix.
@@ -210,7 +228,48 @@ engine:
     # Anything not modelled above, appended verbatim.
     extraArgs: []
 
-  # API key vLLM requires on its own endpoint. Empty means no key; the NetworkPolicy
+  # SGLang server flags (engine.mode == "sglang"). The same settings under the names
+  # SGLang gives them; see deploy/sglang/README.md for what each one buys and how it lines
+  # up against the vLLM flag above it, and deploy/sglang/values-h100.yaml for a filled-in
+  # H100 profile.
+  sglang:
+    image:
+      repository: lmsysorg/sglang
+      # Pinned for the same reason the vLLM tag is, and the official image.
+      tag: v0.5.3
+    contextLength: 8192
+    # SGLang's name for vLLM's gpuMemoryUtilization: the share of the device held by
+    # weights plus KV cache.
+    memFractionStatic: 0.90
+    # RadixAttention prefix caching is ON in SGLang unless it is disabled, so `false` here
+    # renders --disable-radix-cache and `true` renders no flag at all. That inverted
+    # polarity is the one place the two engines' values are not interchangeable.
+    enablePrefixCaching: true
+    # Token budget one scheduler step may spend on prefill; having one is what makes
+    # prefill chunked, so there is no separate enableChunkedPrefill.
+    chunkedPrefillSize: 8192
+    maxRunningRequests: 256
+    tpSize: 1
+    dtype: bfloat16
+    speculative:
+      enabled: false
+      # EAGLE drafts from a small head trained on the target's hidden states and needs
+      # draftModel; NEXTN uses the checkpoint's own multi-token-prediction head.
+      algorithm: EAGLE
+      draftModel: ""
+      numSteps: 3
+      numDraftTokens: 4
+    lora:
+      enabled: false
+      # How many *distinct* adapters one batch may mix, not how many may be registered.
+      maxLorasPerBatch: 8
+      # name=path pairs resolved inside the adapters volume; SGLang takes them all in one
+      # --lora-paths flag.
+      paths: []
+    # Anything not modelled above, appended verbatim.
+    extraArgs: []
+
+  # API key the engine requires on its own endpoint. Empty means no key; the NetworkPolicy
   # below is then the only thing keeping the engine private.
   apiKeySecret:
     name: ""
@@ -236,8 +295,8 @@ engine:
     fsGroup: 0
   securityContext:
     allowPrivilegeEscalation: false
-    # vLLM compiles kernels and writes a torch.compile cache at startup, so its root
-    # filesystem cannot be read-only.
+    # Both production engines compile kernels and write a torch.compile cache at startup,
+    # so the engine's root filesystem cannot be read-only.
     readOnlyRootFilesystem: false
     capabilities:
       drop: ["ALL"]
@@ -260,8 +319,9 @@ engine:
     key: token
 
   # LoRA adapters, delivered on a volume and refreshed by an init container that syncs
-  # from an object store. The same volume is mounted into the gateway pod in `reference`
-  # mode, where the adapters are loaded by the in-process engine.
+  # from an object store, and read by whichever engine holds the model: vLLM's
+  # --lora-modules, SGLang's --lora-paths, or the in-process engine in `reference` mode,
+  # where the same volume is mounted into the gateway pod instead.
   adapters:
     enabled: false
     mountPath: /adapters

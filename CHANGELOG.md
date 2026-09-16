@@ -83,6 +83,45 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the JSON, and opens both generated pages with a hardware line (GPU, driver, CUDA, torch,
   vLLM, $/GPU-hour and its source) read out of the result files.
 
+#### SGLang, a second production backend
+
+- `deploy/sglang/`: the mirror of `deploy/vllm/` — a README explaining each flag and how it
+  lines up against the vLLM flag of the same purpose, `values-h100.yaml` for one H100 80GB,
+  and `launch.sh`, which starts `python -m sglang.launch_server` with RadixAttention prefix
+  caching (on unless `--disable-radix-cache`), EAGLE/NEXTN speculative decoding and
+  multi-LoRA (`--lora-paths`, `--max-loras-per-batch`), and prints its command line under
+  `DRY_RUN=1`. The image is the official `lmsysorg/sglang:v0.5.3`, pinned.
+- Helm `engine.mode` gains `sglang`: the same engine Deployment, Service, PVC and
+  NetworkPolicy as `vllm` with a different image and argv, a readiness and startup probe on
+  `GET /health`, its own port, and `engine.sglang.*` values for every flag. The image
+  follows `engine.mode` unless `engine.image.repository` overrides it, so a vLLM image
+  cannot be started with SGLang's flags; `make k8s-lint` renders the new mode from
+  `deploy/sglang/values-h100.yaml` and validates it with kubeconform.
+- `docker-compose.yml` gains an `sglang` profile beside `gpu`, and `configs/models.yaml`
+  shows an SGLang replica in the same pool as the vLLM ones — there is no per-engine backend
+  type, so an engine migration is a weight (or a canary lane).
+- `OpenAICompatBackend.server_info()`: `GET /version` and, when the server has it, SGLang's
+  native `GET /get_server_info`, reduced to a documented whitelist of launch settings. It
+  never raises, returns `{}` when neither answers, and is the *only* code the second engine
+  needed — the request path, the SSE framing, the usage block and the adapter-as-`model`
+  convention are identical on both servers.
+- `naive-vs-cb` and `prefix-cache` accept an SGLang arm through the same `--url` path:
+  `--arm sglang` and `--backend sglang` respectively, one server per invocation, with the
+  engine's name and whatever it reported about itself recorded in `config["engine"]`. Each
+  prefix-cache pair is compared against a control started on its own engine, and one pair of
+  URLs claimed by two engines is refused rather than misattributed.
+- `scripts/run_all_benchmarks.sh` reads `SGLANG_URL` and `SGLANG_BASELINE_URL` and runs those
+  two scenarios against them when set, as separate steps.
+- `scripts/project_h100_results.py` writes projected SGLang arms for those two scenarios, and
+  `results/`, `docs/results.md`, `results/README.md` and the README's block are regenerated
+  from them: 104 result documents where there were 99. The anchors, and the closed-loop
+  identity that ties the throughput and TPOT columns together, are written out in the
+  generator's own header, which is the one place in this repository where a performance
+  number may be typed.
+- ADR-0001 gains an addendum recording what did *not* have to change, and
+  `docs/{gateway,kubernetes,vastai,scenarios,benchmarking,architecture,runbook,engine}.md`
+  plus the README name both production engines wherever they named one.
+
 #### Scaffold
 
 - Repository scaffold: `uv`-managed packaging (`pyproject.toml`, `uv.lock`, `.python-version`),
@@ -114,6 +153,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Result files record the installed `sglang` version alongside `vllm` (as `None` when the
+  package is absent, so a run made without it is distinguishable from an older file that
+  never looked), and the rendered pages' hardware line names whichever serving engines the
+  runs recorded.
+- The projected vLLM arm of `naive_vs_cb` records `--no-enable-prefix-caching` in its server
+  block. That scenario runs with prefix caching off on every engine — it sends one prompt
+  pool at three concurrencies — and the record previously showed no prefix-caching flag at
+  all, which read as "whatever the default is".
 - The rendered results pages and the README's results block carry a **Suite** line next to
   the hardware line: how many runs, over what wall-clock span, and what that span costs at
   the `$/GPU-hour` the files recorded. Like every other number on those pages it is computed

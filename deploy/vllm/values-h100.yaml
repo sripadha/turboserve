@@ -46,13 +46,14 @@ engine:
   model: Qwen/Qwen2.5-7B-Instruct
   replicaCount: 1
 
-  image:
-    repository: vllm/vllm-openai
-    # Pinned, not floating: a vLLM minor release can change scheduling and invalidate any
-    # comparison made against an earlier run. The version is recorded in every result file.
-    tag: v0.11.0
-
   vllm:
+    image:
+      repository: vllm/vllm-openai
+      # Pinned, not floating: a vLLM minor release can change scheduling and invalidate
+      # any comparison made against an earlier run. The version is recorded in every
+      # result file.
+      tag: v0.11.0
+
     maxModelLen: 8192
     # 0.90 rather than 0.95: the remaining headroom absorbs activation spikes during a
     # long prefill. Pushing it higher trades a larger KV cache for CUDA OOM under burst.

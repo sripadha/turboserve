@@ -6,7 +6,10 @@
 #
 # backend types
 #   mock    in-process synthetic backend (no model, no GPU) -- tests, chaos, kind e2e
-#   openai  any OpenAI-compatible HTTP server: vLLM, TGI's OpenAI route, another gateway
+#   openai  any OpenAI-compatible HTTP server: vLLM, SGLang, TGI's OpenAI route, another
+#           gateway. There is no per-engine backend type and no per-engine option, because
+#           the wire protocol is the same one; the pool below names both engines and the
+#           gateway cannot tell them apart.
 #   local   the in-process reference engine (turboserve.gateway.backends.local)
 # `options` is passed straight to the backend's constructor.
 #
@@ -45,6 +48,22 @@ models:
         weight: 1.0
         options:
           base_url: http://vllm-canary:8000/v1
+      # The second production engine, in the same pool and on the same lane: SGLang's
+      # OpenAI-compatible API is served under /v1 on port 30000 by default, and the only
+      # line that changes is the URL. A replica serving the same model on a second engine
+      # is how an engine migration is done a percentage at a time -- give it a small
+      # `weight` here, or put it on the canary lane and let `turboserve canary run` gate
+      # it on the SLO. Adapter names map exactly as they do for vLLM: SGLang serves each
+      # adapter registered with --lora-paths under its own name in the `model` field.
+      - name: sglang-stable-a
+        backend: openai
+        lane: stable
+        weight: 1.0
+        options:
+          base_url: http://sglang-stable-a:30000/v1
+          adapter_models:
+            acme-support-r16: acme-support-r16
+            acme-summary-r16: acme-summary-r16
     price:
       input_per_1m_usd: 0.20
       output_per_1m_usd: 0.60

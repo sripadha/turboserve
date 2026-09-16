@@ -245,9 +245,18 @@ def test_chart_metadata_is_present() -> None:
     assert chart["version"] and chart["appVersion"]
 
 
-def test_chart_values_parse_and_declare_the_three_engine_modes() -> None:
+def test_chart_values_parse_and_declare_every_engine_mode() -> None:
     values = yaml.safe_load((CHART / "values.yaml").read_text(encoding="utf-8"))
     assert values["engine"]["mode"] == "mock"
+    # Both production engines are configured in the chart, each with its own pinned image,
+    # and neither is the default: a mode that needs a GPU must be asked for.
+    for engine, repository in (("vllm", "vllm/vllm-openai"), ("sglang", "lmsysorg/sglang")):
+        image = values["engine"][engine]["image"]
+        assert image["repository"] == repository
+        assert image["tag"] and image["tag"] != "latest", f"{engine} image tag must be pinned"
+    # engine.image is the override, so it must not name an engine of its own: a repository
+    # here would silently win over engine.mode.
+    assert values["engine"]["image"]["repository"] == ""
     assert values["gateway"]["service"]["targetPort"] == 8000
     # The default fleet data must parse as the schemas the gateway actually reads, and the
     # tenants file must carry hashed keys rather than plaintext ones.
@@ -330,6 +339,7 @@ def test_error_rate_gate_falls_back_to_the_raw_records() -> None:
         "deploy/prometheus/prometheus.yml",
         "deploy/kind/kind-config.yaml",
         "deploy/vllm/values-h100.yaml",
+        "deploy/sglang/values-h100.yaml",
         "deploy/grafana/provisioning/datasources/prometheus.yaml",
         "deploy/grafana/provisioning/dashboards/turboserve.yaml",
         ".github/workflows/ci.yml",
@@ -340,6 +350,19 @@ def test_error_rate_gate_falls_back_to_the_raw_records() -> None:
 def test_yaml_assets_parse(relative: str) -> None:
     documents = list(yaml.safe_load_all((REPO_ROOT / relative).read_text(encoding="utf-8")))
     assert [document for document in documents if document]
+
+
+def test_compose_offers_one_profile_per_production_engine() -> None:
+    """Each GPU engine is its own profile: a single GPU fits one of them at a time, and the
+    gateway in front of them is the same service with a different TURBOSERVE_ENGINE."""
+    compose = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    assert compose["services"]["vllm"]["profiles"] == ["gpu"]
+    assert compose["services"]["sglang"]["profiles"] == ["sglang"]
+    # Neither starts by default: `docker compose up` must stay a no-GPU stack.
+    assert "profiles" not in compose["services"]["gateway"]
+    for name in ("vllm", "sglang"):
+        assert ":" in compose["services"][name]["image"], f"{name} image must be pinned"
+        assert not compose["services"][name]["image"].endswith(":latest")
 
 
 def test_compose_mounts_the_same_rules_file_the_chart_embeds() -> None:
@@ -354,6 +377,7 @@ def test_compose_mounts_the_same_rules_file_the_chart_embeds() -> None:
     [
         "deploy/kind/e2e.sh",
         "deploy/vllm/launch.sh",
+        "deploy/sglang/launch.sh",
         "scripts/vastai/provision.sh",
         "scripts/vastai/onstart.sh",
         "scripts/vastai/sync.sh",

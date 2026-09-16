@@ -8,6 +8,10 @@ Engine mode: {{ .Values.engine.mode }}
 {{- else if eq .Values.engine.mode "reference" }}
   The from-scratch engine runs inside the gateway pods, so those pods hold the GPU, the
   model cache and the LoRA adapters.
+{{- else if eq .Values.engine.mode "sglang" }}
+  SGLang runs in {{ .Values.engine.replicaCount }} separate pod(s) serving {{ .Values.engine.model }};
+  the gateway routes to {{ include "turboserve.engine.url" . }}.
+  RadixAttention prefix caching is {{ if .Values.engine.sglang.enablePrefixCaching }}on{{ else }}off (--disable-radix-cache){{ end }}.
 {{- else }}
   vLLM runs in {{ .Values.engine.replicaCount }} separate pod(s) serving {{ .Values.engine.model }};
   the gateway routes to {{ include "turboserve.engine.url" . }}.

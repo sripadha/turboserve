@@ -32,7 +32,7 @@ flowchart LR
   T[tokenizer] --> PR[bench/prompts.py<br/>seeded prompts,<br/>exact token counts]
   PR --> S[scenario<br/>bench/scenarios/*]
   S --> LG[bench/loadgen.py<br/>open or closed driver]
-  LG -->|GenerateRequest| B[Backend.generate<br/>reference engine, vLLM, mock]
+  LG -->|GenerateRequest| B["Backend.generate<br/>reference engine, vLLM, SGLang, mock"]
   B -->|TokenEvent stream| RB[bench/metrics.py<br/>RecordBuilder]
   RB --> RR[bench/records.py<br/>RequestRecord + RunResult]
   RR --> J[(results/&lt;scenario&gt;/&lt;ts&gt;.json<br/>+ results/index.json)]
@@ -198,8 +198,8 @@ Each scenario is a CLI subcommand under `src/turboserve/bench/scenarios/`, takes
 
 | Scenario | Arms | What it isolates |
 | --- | --- | --- |
-| `naive_vs_cb` | sequential HF generate, static batching, the reference engine's continuous batching, and vLLM through the gateway — same prompts, same sampling | what continuous batching is worth, at three concurrencies |
-| `prefix_cache` | prefix cache off vs on, on the reference engine and on vLLM, with a long shared system prompt | TTFT and the cache hit rate when requests share a prefix |
+| `naive_vs_cb` | sequential HF generate, static batching, the reference engine's continuous batching, and each production engine (vLLM, SGLang) through the same `--url` path — same prompts, same sampling | what continuous batching is worth, at three concurrencies, and where each engine lands |
+| `prefix_cache` | prefix cache off vs on, on the reference engine and on each production engine, with a long shared system prompt | TTFT and the cache hit rate when requests share a prefix |
 | `spec_decode` | target/draft model pairs and an n-gram drafter, swept over `k`, at three concurrencies | tokens/s and acceptance rate against target-only decoding |
 | `multi_lora` | several adapter counts at rank 16, plus a base-only arm | adapter memory against merged copies, and the p95 cost of serving many adapters at equal concurrency |
 | `chaos` | steady open-loop load while the chaos harness kills engine workers | error rate and tail latency under fault injection |
@@ -257,7 +257,8 @@ own rather than a dictionary crushed into one cell — then the list of result f
 section was built from, each linked so a reader can open the raw records behind a row.
 
 Both pages open with a hardware line naming the GPU, the driver and CUDA versions, the torch
-and vLLM versions and the $/GPU-hour with its source, all read out of the result files.
+and serving-engine versions (vLLM, SGLang — whichever the runs recorded) and the $/GPU-hour
+with its source, all read out of the result files.
 
 An absent number renders as an em dash (`—`), never as a zero: a zero in a latency column
 reads as "instant" and would be the most misleading character on the page. A ratio with a
@@ -315,6 +316,7 @@ what `make bench` calls:
 make bench PROFILE=h100                    # every scenario here, then render
 make bench-one SCENARIO=prefix-cache       # one of them
 VLLM_URL=http://127.0.0.1:8000/v1 make bench PROFILE=h100   # adds every vLLM arm
+SGLANG_URL=http://127.0.0.1:30000/v1 make bench PROFILE=h100 # adds the SGLang arms
 ```
 
 On a rented GPU the same thing is driven from a laptop by `make bench-h100`, which chains

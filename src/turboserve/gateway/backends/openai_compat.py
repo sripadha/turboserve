@@ -1,9 +1,16 @@
-"""A backend that streams from any OpenAI-compatible HTTP server (vLLM, TGI, ...).
+"""A backend that streams from any OpenAI-compatible HTTP server (vLLM, SGLang, TGI, ...).
 
 This is the production path: the same gateway that fronts the in-process reference engine
-fronts a fleet of vLLM pods, so both can be measured behind identical auth, routing, quota
-and accounting code. Without that, a comparison between the reference engine and vLLM would
-also be a comparison between two different serving stacks.
+fronts a fleet of vLLM or SGLang pods, so all of them can be measured behind identical auth,
+routing, quota and accounting code. Without that, a comparison between the reference engine
+and a production one would also be a comparison between two different serving stacks.
+
+The second production engine needed no new code on the request path, which is the point of
+coding against a wire protocol rather than against a server: vLLM and SGLang take the same
+request body (``ignore_eos`` and the other extra members included), frame their SSE the same
+way, honour ``stream_options.include_usage`` the same way and address a LoRA adapter through
+the same ``model`` field. What does differ is what each will *say about itself*, and
+:meth:`OpenAICompatBackend.server_info` is the whole of the difference.
 
 Three details of the upstream protocol drive the code below:
 
@@ -25,6 +32,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Final
 from urllib.parse import urlsplit, urlunsplit
 
@@ -43,7 +51,7 @@ from turboserve.gateway.backends.protocol import (
 )
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from collections.abc import AsyncIterator, Mapping
+    from collections.abc import AsyncIterator
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +59,38 @@ __all__ = ["OpenAICompatBackend"]
 
 _DATA_PREFIX: Final = "data:"
 _DONE: Final = "[DONE]"
+
+#: Native (non-OpenAI) endpoints asked for by :meth:`OpenAICompatBackend.server_info`.
+#: ``/version`` is served by both vLLM and SGLang; ``/get_server_info`` is SGLang's, and a
+#: server that answers it is therefore an SGLang server.
+_VERSION_PATH: Final = "/version"
+_SERVER_INFO_PATH: Final = "/get_server_info"
+
+#: Fields of a ``/get_server_info`` response worth recording. A whitelist rather than the
+#: whole document: the server returns its complete launch configuration, most of which is
+#: defaults, and a result file should carry the settings that change what was measured --
+#: the model, the numeric type, the context window, the scheduler's limits, and whether
+#: prefix caching, speculation or multi-LoRA were on -- not a copy of an argument parser.
+_SERVER_INFO_FIELDS: Final[tuple[str, ...]] = (
+    "model_path",
+    "served_model_name",
+    "tokenizer_path",
+    "dtype",
+    "context_length",
+    "max_running_requests",
+    "max_total_tokens",
+    "chunked_prefill_size",
+    "mem_fraction_static",
+    "disable_radix_cache",
+    "speculative_algorithm",
+    "speculative_num_steps",
+    "speculative_num_draft_tokens",
+    "max_loras_per_batch",
+    "attention_backend",
+    "schedule_policy",
+    "tp_size",
+    "dp_size",
+)
 
 #: Upstream ``finish_reason`` strings mapped onto the engine's enum. Anything unrecognised
 #: becomes ``STOP``: the completion did end, and inventing a new reason would break the
@@ -72,6 +112,27 @@ def _origin(base_url: str) -> str:
     """
     parts = urlsplit(base_url)
     return urlunsplit((parts.scheme, parts.netloc, "", "", ""))
+
+
+def _server_settings(payload: Any) -> dict[str, Any]:
+    """The recorded subset of a ``/get_server_info`` response.
+
+    The document nests its launch arguments under ``server_args`` in some releases and
+    flattens them in others, so both shapes are read and the flat one wins -- a field a
+    running server reports about itself is more current than the argument it was started
+    with.
+    """
+    if not isinstance(payload, Mapping):
+        return {}
+    nested = payload.get("server_args")
+    sources = [nested, payload] if isinstance(nested, Mapping) else [payload]
+    settings: dict[str, Any] = {}
+    for source in sources:
+        for field in _SERVER_INFO_FIELDS:
+            value = source.get(field)
+            if isinstance(value, str | int | float | bool):
+                settings[field] = value
+    return settings
 
 
 @register_backend("openai")
@@ -323,6 +384,56 @@ class OpenAICompatBackend:
             logger.debug("model listing of %s failed: %s", self.name, exc)
             return False
         return True
+
+    async def server_info(self) -> dict[str, Any]:
+        """What the upstream server reports about itself, or ``{}`` when it says nothing.
+
+        Two native endpoints, neither of them part of the OpenAI API:
+
+        * ``GET /version`` -> ``{"version": ...}``. vLLM and SGLang both serve it.
+        * ``GET /get_server_info`` -> the launch configuration (model path, dtype, context
+          length, scheduler settings). This one is SGLang's, so an answer here is how a
+          server identifies itself as SGLang rather than vLLM.
+
+        The result belongs in a benchmark's result file, where it is the difference between
+        "an OpenAI-compatible server at this URL" and a run somebody else can reproduce: the
+        flags a client cannot otherwise see -- whether the radix cache was disabled, what the
+        context window was, how many adapters a batch could mix -- are exactly the flags that
+        decide what the numbers mean.
+
+        Never raises and never blocks a request path. A server that exposes neither endpoint
+        (a proxy, TGI, an older build) contributes an empty block rather than an error, which
+        is the same policy :meth:`health` follows for the same reason.
+        """
+        if self._closed:
+            return {}
+        info: dict[str, Any] = {}
+        version = await self._get_root_json(_VERSION_PATH)
+        if isinstance(version, Mapping) and isinstance(version.get("version"), str):
+            info["version"] = version["version"]
+        settings = _server_settings(await self._get_root_json(_SERVER_INFO_PATH))
+        if settings:
+            info["settings"] = settings
+        return info
+
+    async def _get_root_json(self, path: str) -> Any:
+        """GET ``path`` at the server root and decode it, or ``None``.
+
+        The root, not ``base_url``: completions live under ``/v1`` while the native
+        endpoints sit beside it, exactly as ``/health`` does.
+        """
+        try:
+            response = await self._client.get(_origin(self.base_url) + path)
+        except httpx.HTTPError as exc:
+            logger.debug("%s of %s failed: %s", path, self.name, exc)
+            return None
+        if response.status_code != httpx.codes.OK:
+            return None
+        try:
+            return response.json()
+        except ValueError:
+            logger.debug("%s of %s returned a non-JSON body", path, self.name)
+            return None
 
     async def models(self) -> list[str]:
         """Model ids the upstream server advertises."""

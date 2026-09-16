@@ -7,16 +7,20 @@
 #
 #   docker compose up -d                       gateway (mock engine) + Prometheus + Grafana
 #   docker compose --profile gpu up -d         also starts vLLM and points the gateway at it
+#   docker compose --profile sglang up -d      the same with SGLang instead of vLLM
 #
 # The default profile needs no GPU and no model: the mock backend emits synthetic tokens
 # with the same streaming shape, which is enough to exercise the API, the tenant quotas,
-# the metrics and both dashboards. The `gpu` profile replaces it with real vLLM, which
-# needs an NVIDIA GPU and the container toolkit.
+# the metrics and both dashboards. The `gpu` and `sglang` profiles replace it with a real
+# production engine, which needs an NVIDIA GPU and the container toolkit. They are two
+# profiles rather than two services in one because a single GPU fits one of them at a time;
+# start each with its own TURBOSERVE_ENGINE, and the gateway in front of it does not change.
 #
-#   gateway    http://localhost:8000     /v1/..., /healthz, /readyz, /metrics
+#   gateway    http://localhost:8000      /v1/..., /healthz, /readyz, /metrics
 #   prometheus http://localhost:9090
-#   grafana    http://localhost:3000     admin / admin, dashboard "turboserve gateway"
-#   vllm       http://localhost:8001/v1  (gpu profile only)
+#   grafana    http://localhost:3000      admin / admin, dashboard "turboserve gateway"
+#   vllm       http://localhost:8001/v1   (gpu profile only)
+#   sglang     http://localhost:30000/v1  (sglang profile only)
 
 name: turboserve
 
@@ -27,9 +31,11 @@ services:
       dockerfile: Dockerfile.gateway
     image: turboserve-gateway:dev
     # `--engine` takes `config`, `mock`, or the base URL of an OpenAI-compatible server.
-    # The default is the in-process mock; the gpu profile is driven with
-    #   TURBOSERVE_ENGINE=http://vllm:8000/v1 docker compose --profile gpu up -d
-    # which points the same gateway at the real vLLM container.
+    # The default is the in-process mock; the two GPU profiles are driven with
+    #   TURBOSERVE_ENGINE=http://vllm:8000/v1     docker compose --profile gpu up -d
+    #   TURBOSERVE_ENGINE=http://sglang:30000/v1  docker compose --profile sglang up -d
+    # which point the same gateway at the real engine container. Nothing else about the
+    # gateway changes between them: both servers speak the same OpenAI-compatible API.
     #
     # Host, port, tenants and models are flags rather than TURBOSERVE_* environment
     # variables because `serve` builds its Settings with those four values explicitly.
@@ -111,6 +117,59 @@ services:
       start_period: 300s
     restart: unless-stopped
 
+  sglang:
+    # The official image, pinned rather than floating for the same reason the vLLM tag is:
+    # a minor release can change scheduling behaviour and make a comparison against an
+    # earlier run meaningless. The version lands in every result file, and the running
+    # server reports it on GET /version.
+    image: lmsysorg/sglang:v0.5.3
+    profiles: ["sglang"]
+    entrypoint: ["python3", "-m", "sglang.launch_server"]
+    command:
+      - --model-path
+      - ${TURBOSERVE_MODEL:-Qwen/Qwen2.5-7B-Instruct}
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "30000"
+      - --dtype
+      - bfloat16
+      - --context-length
+      - "8192"
+      - --mem-fraction-static
+      - "0.90"
+      # SGLang's counterpart of the two flags the vllm service above enables: the prefill
+      # budget per step is what makes prefill chunked, and RadixAttention prefix caching is
+      # already on -- it would take --disable-radix-cache to turn it off, which is how the
+      # prefix-cache benchmark's control server is started. See deploy/sglang/README.md.
+      - --chunked-prefill-size
+      - "8192"
+    environment:
+      HF_HOME: /models
+      # Needed only for gated checkpoints; export it in the shell or a .env file.
+      HF_TOKEN: ${HF_TOKEN:-}
+    ports:
+      - "${SGLANG_PORT:-30000}:30000"
+    volumes:
+      # Persist the Hugging Face cache so a restart does not re-download the weights.
+      - sglang-models:/models
+    # The default 64 MB /dev/shm is too small for torch's workers.
+    shm_size: "8gb"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: ["gpu"]
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:30000/health').read()\""]
+      interval: 15s
+      timeout: 5s
+      retries: 40
+      start_period: 300s
+    restart: unless-stopped
+
   prometheus:
     image: prom/prometheus:v3.7.3
     command:
@@ -152,3 +211,4 @@ volumes:
   prometheus-data:
   grafana-data:
   vllm-models:
+  sglang-models:

@@ -2,10 +2,17 @@
 
 `src/turboserve/gateway/` is the HTTP front door: an OpenAI-compatible API that authenticates
 tenants, enforces their quotas, picks a backend replica, streams tokens back and accounts for
-what was used. It is the only part of the system that both the from-scratch reference engine
-and a production vLLM fleet sit behind, which is the point — auth, routing, canary weighting,
-chaos and accounting are then identical for both, and a comparison between the two engines is
-a comparison of engines rather than of serving stacks.
+what was used. It is the only part of the system that the from-scratch reference engine and a
+production fleet — vLLM or SGLang — sit behind, which is the point: auth, routing, canary
+weighting, chaos and accounting are then identical for all of them, and a comparison between
+two engines is a comparison of engines rather than of serving stacks.
+
+The gateway is engine-agnostic, and that is a property worth stating rather than assuming.
+Adding SGLang as a second production backend changed no code on the request path: it is
+served by the same `OpenAICompatBackend` as vLLM, over the same protocol, and the router,
+the quotas, the metrics and the canary gate cannot tell the two apart. The one thing that
+was added is the ability to *record* which of them answered — see
+[Backends](#backends).
 
 ## Purpose
 
@@ -55,7 +62,7 @@ available.
 | `chat_template.py` | `ChatTemplate`, `ChatTemplateCache`, the fallback template |
 | `metrics.py` | `GatewayMetrics` — one private Prometheus registry per app |
 | `usage.py` | `UsageAccumulator`, `UsageRecord`, `UsageTracker`, `PriceTable` |
-| `backends/openai_compat.py` | `OpenAICompatBackend` — streams from vLLM/TGI over httpx |
+| `backends/openai_compat.py` | `OpenAICompatBackend` — streams from vLLM/SGLang/TGI over httpx |
 | `backends/mock.py` | `MockBackend`, `build_mock_app`, `serve_mock` |
 
 `backends/protocol.py` and `backends/__init__.py` (the `Backend` contract and the name
@@ -228,10 +235,16 @@ to exactly the failures the client already started reading.
 models:
   - name: Qwen/Qwen2.5-7B-Instruct
     backends:
-      - {name: vllm-stable-a, backend: openai, lane: stable, options: {base_url: "http://vllm-a:8000/v1"}}
-      - {name: vllm-canary,   backend: openai, lane: canary, options: {base_url: "http://vllm-c:8000/v1"}}
+      - {name: vllm-stable-a,   backend: openai, lane: stable, options: {base_url: "http://vllm-a:8000/v1"}}
+      - {name: sglang-stable-a, backend: openai, lane: stable, options: {base_url: "http://sglang-a:30000/v1"}}
+      - {name: vllm-canary,     backend: openai, lane: canary, options: {base_url: "http://vllm-c:8000/v1"}}
     price: {input_per_1m_usd: 0.20, output_per_1m_usd: 0.60}
 ```
+
+The second replica in that pool runs a different engine, and nothing in the file says so
+beyond its name and port: there is no per-engine backend type, because there is no per-engine
+behaviour to implement. That is also how an engine migration is done here — put SGLang on the
+canary lane and let `turboserve canary run` gate it on the same SLO a new build is gated on.
 
 `backend:` names a class in the registry (`turboserve.gateway.backends`), and `options:` is its
 constructor's keyword arguments, so a deployment adds a backend type by installing a module
@@ -241,13 +254,33 @@ that registers itself.
 of that protocol shape it:
 
 - What the `openai` client calls `extra_body` is, on the wire, additional top-level members of
-  the request object — that is how vLLM receives `top_k`, `repetition_penalty` and
+  the request object — that is how vLLM and SGLang receive `top_k`, `repetition_penalty` and
   `ignore_eos`. They are sent only when they differ from their neutral value, so a stricter
   upstream still works for ordinary requests.
-- A LoRA adapter is addressed through the `model` field: vLLM serves each loaded adapter under
-  its adapter name, so `adapter_models` maps the tenant's name to that string.
+- A LoRA adapter is addressed through the `model` field: both engines serve each loaded
+  adapter under its adapter name (vLLM's `--lora-modules`, SGLang's `--lora-paths`), so
+  `adapter_models` maps the tenant's name to that string.
 - `stream_options.include_usage` is always requested, because it is the only way to learn the
   upstream's own tokenisation of the prompt instead of guessing at it.
+
+Those three are the whole protocol surface, and they are the same on both production engines,
+which is why `generate()` contains no branch on which server it is talking to. What is *not*
+the same is what each server will say about itself, and `server_info()` is the whole of the
+difference:
+
+| Endpoint | vLLM | SGLang | Used for |
+| --- | --- | --- | --- |
+| `GET /health` | yes | yes | `health()`, and the chart's startup/readiness probes |
+| `GET /version` | yes | yes | `{"version": ...}` |
+| `GET /get_server_info` | no | yes | model path, dtype, context length, scheduler settings |
+
+`server_info()` asks for both, keeps a documented whitelist of scalar settings out of the
+second, and returns `{}` when neither answers — it never raises and is never on a request
+path. A server that answers `/get_server_info` is an SGLang server, which is how a benchmark
+result file can record what a client otherwise cannot see: whether the radix cache was
+disabled, what the context window was, how many adapters a batch could mix. Those flags are
+most of what a number means, and the benchmark scenarios copy the block into the run's
+`config["engine"]["server"]`.
 
 Transport failures map onto the router's vocabulary: connect errors → `BackendUnavailableError`,
 timeouts → `BackendTimeoutError`, 429/503 → `BackendOverloadedError`, 404 → `ModelNotFoundError`,
@@ -354,8 +387,9 @@ uv run turboserve gateway serve --engine mock --model mock-model --port 8000 --n
 uv run turboserve gateway serve --engine config --tenants configs/tenants.yaml \
     --models configs/models.yaml --port 8000
 
-# front an existing OpenAI-compatible server (vLLM, TGI)
+# front an existing OpenAI-compatible server (vLLM, SGLang, TGI) -- one flag, any engine
 uv run turboserve gateway serve --engine http://127.0.0.1:8001/v1 --model Qwen/Qwen2.5-7B-Instruct
+uv run turboserve gateway serve --engine http://127.0.0.1:30000/v1 --model Qwen/Qwen2.5-7B-Instruct
 
 # validate configuration without starting anything
 uv run turboserve gateway config-check
@@ -399,7 +433,7 @@ lets two gateways coexist in one process without sharing quotas or metrics.
 | `test_gateway_auth.py` | Digest hashing, bearer parsing, 401 vs 403, allow-lists, per-tenant adapter namespacing, the shipped `configs/tenants.yaml` |
 | `test_gateway_limits.py` | Bucket refill arithmetic against an injected clock, overdraw and `Retry-After`, rpm/tpm/concurrency refusals, slot release on exceptions |
 | `test_gateway_router.py` | Lane share vs canary weight and intra-lane weight share (both statistical, seeded), health caching, retry before the first event, no retry after it, non-retryable errors, the concurrency gate, `models.yaml` loading |
-| `test_gateway_backends.py` | Mock determinism, latency, error and drop rates, model/adapter refusal; `OpenAICompatBackend` against `httpx.MockTransport` replaying synthetic transcripts — streaming shapes, usage, adapter-as-model, status-code mapping, malformed chunks, health fallback |
+| `test_gateway_backends.py` | Mock determinism, latency, error and drop rates, model/adapter refusal; `OpenAICompatBackend` against `httpx.MockTransport` replaying synthetic transcripts — streaming shapes, usage, adapter-as-model, status-code mapping, malformed chunks, health fallback, and `server_info()` against an SGLang-shaped `/version` + `/get_server_info`, a vLLM-shaped `/version` alone, and a server that answers neither |
 | `test_gateway_app.py` | Every status code, the SSE format through a strict parser including `[DONE]`, opt-in usage chunks, quota 429s with `Retry-After`, metric exposition and label values, mid-stream failures |
 | `test_gateway_usage.py` | The three latency definitions, token-count precedence, the OpenAI usage object, prices, per-tenant totals |
 | `test_gateway_chat_template.py` | Tokenizer template vs fallback on the cached tiny Qwen2 and tiny Llama checkpoints, content-part flattening, render failures, caching |
@@ -447,6 +481,8 @@ Nothing on this page states a performance figure. Measured numbers live in
 - vLLM OpenAI-compatible server, including `extra_body` sampling parameters and serving LoRA
   adapters under the `model` field:
   <https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html>
+- SGLang's OpenAI-compatible API and its native endpoints (`/health`, `/version`,
+  `/get_server_info`, `/generate`): <https://docs.sglang.ai/>
 - Server-Sent Events, WHATWG HTML §9.2 (framing, `data:` fields, comments):
   <https://html.spec.whatwg.org/multipage/server-sent-events.html>
 - RFC 9110 §10.2.3 `Retry-After`: <https://www.rfc-editor.org/rfc/rfc9110#field.retry-after>

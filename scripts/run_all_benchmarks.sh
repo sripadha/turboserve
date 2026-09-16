@@ -14,6 +14,12 @@
 #   VLLM_URL             OpenAI-compatible vLLM server; enables every `vllm` arm
 #   VLLM_BASELINE_URL    a second vLLM server started WITHOUT --enable-prefix-caching,
 #                        used as the prefix-cache scenario's control arm
+#   SGLANG_URL           OpenAI-compatible SGLang server; enables the `sglang` arms of
+#                        naive-vs-cb and prefix-cache (the two scenarios that engine is
+#                        projected and measured on)
+#   SGLANG_BASELINE_URL  a second SGLang server started WITH --disable-radix-cache, the
+#                        prefix-cache control arm for that engine -- RadixAttention is on
+#                        by default, so it is the control that needs the flag
 #   TURBOSERVE           how to invoke the CLI (default: uv run --frozen turboserve)
 #   ADAPTERS_DIR         LoRA adapters the multi-lora scenario serves (default: adapters)
 #   SKIP                 space-separated scenario names to skip, e.g. "spec-decode chaos"
@@ -31,6 +37,8 @@ PROFILE="${PROFILE:-h100}"
 RESULTS_DIR="${RESULTS_DIR:-results}"
 VLLM_URL="${VLLM_URL:-}"
 VLLM_BASELINE_URL="${VLLM_BASELINE_URL:-}"
+SGLANG_URL="${SGLANG_URL:-}"
+SGLANG_BASELINE_URL="${SGLANG_BASELINE_URL:-}"
 TURBOSERVE="${TURBOSERVE:-uv run --frozen turboserve}"
 SKIP="${SKIP:-}"
 DRY_RUN="${DRY_RUN:-0}"
@@ -88,7 +96,7 @@ run_step() {
   return 1
 }
 
-log "profile=${PROFILE} results=${RESULTS_DIR} vllm_url=${VLLM_URL:-<none>}"
+log "profile=${PROFILE} results=${RESULTS_DIR} vllm_url=${VLLM_URL:-<none>} sglang_url=${SGLANG_URL:-<none>}"
 log "started ${STARTED_AT}"
 
 # ---------------------------------------------------------------------------------------
@@ -109,22 +117,61 @@ else
   log "no VLLM_URL: skipping the vLLM arm of naive-vs-cb"
 fi
 
+# One --url is one server, so the second production engine is its own invocation rather
+# than a second flag on the one above.
+if [[ -n "${SGLANG_URL}" ]]; then
+  # shellcheck disable=SC2046
+  run_step naive-vs-cb-sglang ${TURBOSERVE} bench naive-vs-cb \
+    --profile "${PROFILE}" --results-dir "${RESULTS_DIR}" \
+    --arm sglang --url "${SGLANG_URL}" $(extra_flags naive-vs-cb)
+else
+  log "no SGLANG_URL: skipping the SGLang arm of naive-vs-cb"
+fi
+
 # ---------------------------------------------------------------------------------------
-# 2. prefix cache off vs on. On vLLM the cache is a launch flag, so the control arm needs
-#    its own server (VLLM_BASELINE_URL) rather than a different request.
+# 2. prefix cache off vs on. On both production engines the cache is a launch flag, so each
+#    control arm needs its own server (VLLM_BASELINE_URL, SGLANG_BASELINE_URL) rather than a
+#    different request -- and a pair of URLs names one engine's pair of servers, which is
+#    why each engine is its own invocation, selected with --backend.
 # ---------------------------------------------------------------------------------------
-PREFIX_ARGS=()
-[[ -n "${VLLM_URL}" ]] && PREFIX_ARGS+=(--url "${VLLM_URL}")
-[[ -n "${VLLM_BASELINE_URL}" ]] && PREFIX_ARGS+=(--baseline-url "${VLLM_BASELINE_URL}")
 # shellcheck disable=SC2046
 run_step prefix-cache ${TURBOSERVE} bench prefix-cache \
   --profile "${PROFILE}" --results-dir "${RESULTS_DIR}" \
-  "${PREFIX_ARGS[@]+"${PREFIX_ARGS[@]}"}" $(extra_flags prefix-cache)
+  --backend reference $(extra_flags prefix-cache)
+
+if [[ -n "${VLLM_URL}" || -n "${VLLM_BASELINE_URL}" ]]; then
+  PREFIX_VLLM_ARGS=()
+  [[ -n "${VLLM_URL}" ]] && PREFIX_VLLM_ARGS+=(--url "${VLLM_URL}")
+  [[ -n "${VLLM_BASELINE_URL}" ]] && PREFIX_VLLM_ARGS+=(--baseline-url "${VLLM_BASELINE_URL}")
+  # shellcheck disable=SC2046
+  run_step prefix-cache-vllm ${TURBOSERVE} bench prefix-cache \
+    --profile "${PROFILE}" --results-dir "${RESULTS_DIR}" --backend vllm \
+    "${PREFIX_VLLM_ARGS[@]}" $(extra_flags prefix-cache)
+else
+  log "no VLLM_URL: skipping the vLLM arms of prefix-cache"
+fi
+
+if [[ -n "${SGLANG_URL}" || -n "${SGLANG_BASELINE_URL}" ]]; then
+  PREFIX_SGLANG_ARGS=()
+  [[ -n "${SGLANG_URL}" ]] && PREFIX_SGLANG_ARGS+=(--url "${SGLANG_URL}")
+  [[ -n "${SGLANG_BASELINE_URL}" ]] && PREFIX_SGLANG_ARGS+=(--baseline-url "${SGLANG_BASELINE_URL}")
+  # shellcheck disable=SC2046
+  run_step prefix-cache-sglang ${TURBOSERVE} bench prefix-cache \
+    --profile "${PROFILE}" --results-dir "${RESULTS_DIR}" --backend sglang \
+    "${PREFIX_SGLANG_ARGS[@]}" $(extra_flags prefix-cache)
+else
+  log "no SGLANG_URL: skipping the SGLang arms of prefix-cache"
+fi
 
 # ---------------------------------------------------------------------------------------
 # 3. speculative decoding, when the scenario is part of this installation. The reference
 #    engine sweeps every pair and k; a vLLM server launched with the same sweep is measured
 #    as a second family of arms, named by --label-prefix so the two do not collide.
+#
+#    SGLang is deliberately not swept here, nor in multi-lora below: this suite measures it
+#    on the two scenarios its arms are defined for (batching and prefix caching). Adding it
+#    to the other three means giving it its own --label-prefix and a target-only control of
+#    its own, which is a scenario change rather than an environment variable.
 # ---------------------------------------------------------------------------------------
 if has_command spec-decode; then
   # shellcheck disable=SC2046

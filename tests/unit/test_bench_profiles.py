@@ -55,10 +55,13 @@ def test_the_h100_profile_matches_the_specified_sizes(profiles: dict[str, BenchP
     assert naive.input_tokens.as_tuple() == (128, 1024)
     assert naive.output_tokens.as_tuple() == (64, 512)
     assert naive.concurrencies == [32, 64, 128]
-    assert "vllm" in naive.backends
+    # Both production engines are arms of the published profile; each is driven through its
+    # own --url, so a run measures whichever servers that host has.
+    assert {"vllm", "sglang"} <= set(naive.backends)
 
     assert h100.scenarios.prefix_cache.shared_prefix_tokens == 1024
     assert h100.scenarios.prefix_cache.prefix_caching == [False, True]
+    assert {"vllm", "sglang"} <= set(h100.scenarios.prefix_cache.backends)
 
     spec_decode = h100.scenarios.spec_decode
     assert spec_decode.speculative_tokens == [2, 4, 6]

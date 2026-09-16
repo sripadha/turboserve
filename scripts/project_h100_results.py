@@ -190,6 +190,7 @@ SOFTWARE = {
     "fastapi": "0.115.6",
     "httpx": "0.28.1",
     "vllm": "0.11.0",
+    "sglang": "0.5.3",
 }
 
 #: How the vLLM arms' server was launched, recorded on the arms it served. The real
@@ -213,6 +214,32 @@ def vllm_server(*args: str) -> dict[str, Any]:
     """The vLLM launch record with ``args`` replacing the prefix-caching/LoRA defaults."""
     base = [arg for arg in VLLM_SERVER["args"] if not arg.startswith("--no-enable-prefix-caching")]
     return {"version": VLLM_SERVER["version"], "args": [*base, *args]}
+
+
+#: How the SGLang arms' server was launched. The same shape as the vLLM record above, and
+#: the same reasoning: a client cannot see a server's flags, so a projection has to say what
+#: it assumed. A measured run records what the server reports about itself instead --
+#: ``OpenAICompatBackend.server_info()`` asks ``/version`` and ``/get_server_info``.
+SGLANG_VERSION = "0.5.3"
+SGLANG_URL = "http://127.0.0.1:30000/v1"
+SGLANG_BASELINE_URL = "http://127.0.0.1:30001/v1"
+SGLANG_ARGS = [
+    "--model-path Qwen/Qwen2.5-7B-Instruct",
+    "--dtype bfloat16",
+    "--max-running-requests 128",
+    "--context-length 4096",
+    "--mem-fraction-static 0.90",
+]
+
+
+def sglang_server(*args: str) -> dict[str, Any]:
+    """The SGLang launch record, with ``args`` appended.
+
+    RadixAttention prefix caching needs no flag to be on, so the cache-*off* servers are the
+    ones that carry ``--disable-radix-cache`` -- the opposite polarity to vLLM's, which is
+    why the two records are built by two functions rather than one with a boolean.
+    """
+    return {"version": SGLANG_VERSION, "args": [*SGLANG_ARGS, *args]}
 
 
 # ---------------------------------------------------------------------------------------
@@ -685,6 +712,23 @@ def baseline_counters(
 #   why its rate keeps rising while its latency rises faster.
 # * Sequential `transformers.generate` decodes one request at a time at ~35 tokens/s, whatever
 #   the offered concurrency: 28 ms per token, kernel-launch bound rather than bandwidth bound.
+# * SGLang on the same model and the same shape sits above vLLM: +5% output tokens/s at
+#   concurrency 64 and +7% at 128 (the reference point for this pair is "+5-8% at 64-128"),
+#   and +4% at 32, below that band because overlap scheduling has less to hide behind at a
+#   small batch. Its time to first token is 8% lower at 32, 10% at 64 and 12% at 128 -- the
+#   reduction grows with load because what it removes is prefill queueing: the CPU-side
+#   scheduling of the next batch overlaps the current forward pass, and RadixAttention keeps
+#   a shared prefix out of the prefill entirely.
+#
+#   One consequence has to be stated rather than smoothed over, because it is arithmetic and
+#   not a claim. This scenario is closed loop at a fixed concurrency, where
+#   `tokens/s = concurrency x tokens_per_request / end-to-end latency`, and the completions
+#   are 288 tokens against a TTFT of a few hundred milliseconds. A higher aggregate rate at
+#   the same concurrency therefore *is* a shorter mean inter-token gap -- there is nowhere
+#   else for it to come from -- so these arms render a TPOT 4-6% below vLLM's rather than the
+#   "within 3%" that the same two engines show at matched offered load in an open loop. The
+#   throughput and the TPOT columns are two views of one number here, and making them
+#   disagree would mean fabricating records that do not add up.
 # ---------------------------------------------------------------------------------------
 
 NAIVE_VS_CB_ARMS: dict[int, dict[str, Arm]] = {
@@ -693,24 +737,27 @@ NAIVE_VS_CB_ARMS: dict[int, dict[str, Arm]] = {
         "static_batch": Arm("static batch", "static_batch", 32, 329.0, 0.0, 0.0),
         "reference": Arm("continuous batching", "reference", 32, 840.0, 108.0, 270.0),
         "vllm": Arm("vLLM", "vllm", 32, 1400.0, 80.0, 200.0),
+        "sglang": Arm("SGLang", "sglang", 32, 1456.0, 73.6, 184.0),
     },
     64: {
         "naive_hf": Arm("naive", "naive_hf", 64, 34.5, 0.0, 0.0),
         "static_batch": Arm("static batch", "static_batch", 64, 523.0, 0.0, 0.0),
         "reference": Arm("continuous batching", "reference", 64, 1620.0, 189.0, 432.0),
         "vllm": Arm("vLLM", "vllm", 64, 2700.0, 140.0, 320.0),
+        "sglang": Arm("SGLang", "sglang", 64, 2835.0, 126.0, 288.0),
     },
     128: {
         "naive_hf": Arm("naive", "naive_hf", 128, 34.5, 0.0, 0.0),
         "static_batch": Arm("static batch", "static_batch", 128, 745.0, 0.0, 0.0),
         "reference": Arm("continuous batching", "reference", 128, 1980.0, 351.0, 608.0),
         "vllm": Arm("vLLM", "vllm", 128, 3300.0, 260.0, 450.0),
+        "sglang": Arm("SGLang", "sglang", 128, 3531.0, 228.8, 396.0),
     },
 }
 
 
 def build_naive_vs_cb(session: Session, profile: Any) -> None:
-    """Four arms at three load levels: what batching is worth."""
+    """Five arms at three load levels: what batching is worth, and where each engine lands."""
     from turboserve.bench.scenarios.common import result_path
     from turboserve.bench.scenarios.naive_vs_cb import ARM_LABELS, SCENARIO, SECONDARY_ARM
 
@@ -782,7 +829,24 @@ def build_naive_vs_cb(session: Session, profile: Any) -> None:
             else:
                 records = stream_records(measured, arm, draws, output_tokens=counts)
                 counters = {}
-                engine = {"kind": "openai", "url": VLLM_URL, "server": vllm_server()}
+                # A remote arm records which engine served it as well as where it was: the
+                # URL says neither, and two production engines write into this directory.
+                # Both servers are launched with their prefix cache off, because this
+                # scenario measures batching and the pool is reused across the sweep.
+                if name == "sglang":
+                    engine = {
+                        "kind": "openai",
+                        "engine": name,
+                        "url": SGLANG_URL,
+                        "server": sglang_server("--disable-radix-cache"),
+                    }
+                else:
+                    engine = {
+                        "kind": "openai",
+                        "engine": name,
+                        "url": VLLM_URL,
+                        "server": vllm_server("--no-enable-prefix-caching"),
+                    }
             config: dict[str, Any] = {
                 **profile.config_for(SCENARIO),
                 "model": work.model,
@@ -822,18 +886,37 @@ def build_naive_vs_cb(session: Session, profile: Any) -> None:
 # third of its prompt: time to first token falls by about a quarter at the median and at the
 # tail. Throughput barely moves -- these completions are 64-128 tokens, so the run is decode
 # bound either way -- which is exactly why this scenario is read on its TTFT columns.
-# vLLM's prefix cache is a launch flag, so its two arms are two servers.
+# A production engine's prefix cache is a launch flag, so each engine's two arms are two
+# servers: vLLM off at :8001 and on at :8000, SGLang off at :30001 (--disable-radix-cache)
+# and on at :30000, where RadixAttention needs no flag to be running.
+#
+# SGLang's arms are placed relative to vLLM's by the same anchor the batching scenario uses
+# -- about +4% output tokens/s at this concurrency of 32, and a time to first token 8% lower
+# with each engine's cache off -- plus one figure that belongs to this scenario alone: with
+# a 1,024-token shared prefix its cache cuts TTFT by 3 points more than vLLM's does (28.7%
+# against 25.7% at the median, 29.0% against 25.8% at the tail). A radix tree keyed by the
+# token sequence matches the whole shared span in one descent and shares its pages across
+# every request holding that prefix, where a per-block hash table has to match block by
+# block and loses the partial block at the boundary.
 # ---------------------------------------------------------------------------------------
 
-PREFIX_CACHE_ARMS: list[tuple[Arm, bool, str | None]] = [
-    (Arm("cache off", "reference-nocache", 32, 700.0, 210.0, 520.0), False, None),
-    (Arm("cache on", "reference", 32, 738.0, 155.0, 385.0), True, None),
+PREFIX_CACHE_ARMS: list[tuple[Arm, bool, str | None, str | None]] = [
+    (Arm("cache off", "reference-nocache", 32, 700.0, 210.0, 520.0), False, None, None),
+    (Arm("cache on", "reference", 32, 738.0, 155.0, 385.0), True, None, None),
     (
         Arm("vLLM cache off", "vllm-nocache", 32, 1150.0, 152.0, 372.0),
         False,
         "http://127.0.0.1:8001/v1",
+        "vllm",
     ),
-    (Arm("vLLM cache on", "vllm", 32, 1214.0, 113.0, 276.0), True, VLLM_URL),
+    (Arm("vLLM cache on", "vllm", 32, 1214.0, 113.0, 276.0), True, VLLM_URL, "vllm"),
+    (
+        Arm("SGLang cache off", "sglang-nocache", 32, 1196.0, 139.8, 342.2),
+        False,
+        SGLANG_BASELINE_URL,
+        "sglang",
+    ),
+    (Arm("SGLang cache on", "sglang", 32, 1263.0, 99.7, 243.0), True, SGLANG_URL, "sglang"),
 ]
 
 #: Share of prompt tokens the engine reports as already computed, and the share of block
@@ -842,13 +925,26 @@ PREFIX_CACHED_FRACTION = 0.60
 PREFIX_HIT_RATE = 0.63
 
 
+def _prefix_server(engine: str, *, caching: bool) -> dict[str, Any]:
+    """The launch record of one prefix-cache arm's server.
+
+    The flag is not the same one negated: vLLM turns its cache *on* with
+    ``--enable-prefix-caching``, while SGLang's RadixAttention is on unless
+    ``--disable-radix-cache`` turns it off. Recording each engine's real flag is what lets a
+    reader check that the control server really was the control.
+    """
+    if engine == "sglang":
+        return sglang_server() if caching else sglang_server("--disable-radix-cache")
+    return vllm_server("--enable-prefix-caching" if caching else "--no-enable-prefix-caching")
+
+
 def build_prefix_cache(session: Session, profile: Any) -> None:
-    """Cache off and on, on the reference engine and on vLLM."""
+    """Cache off and on, on the reference engine and on both production engines."""
     from turboserve.bench.scenarios.common import result_path
     from turboserve.bench.scenarios.prefix_cache import (
         BASELINE_LABEL,
         SCENARIO,
-        VLLM_BASELINE_LABEL,
+        remote_baseline_label,
     )
 
     work = profile.scenarios.prefix_cache
@@ -866,7 +962,7 @@ def build_prefix_cache(session: Session, profile: Any) -> None:
     model = MODELS[work.model]
     draws = Draws(profile.seed + 7, count=len(measured), tokens=work.output_tokens.max)
 
-    for arm, caching, url in PREFIX_CACHE_ARMS:
+    for arm, caching, url, engine in PREFIX_CACHE_ARMS:
         records = stream_records(measured, arm, draws)
         if url is None:
             counters = engine_counters(
@@ -900,19 +996,12 @@ def build_prefix_cache(session: Session, profile: Any) -> None:
                 "dtype": work.dtype,
                 "device": profile.device,
                 "block_size": 16,
-                **(
-                    {
-                        "server": vllm_server(
-                            "--enable-prefix-caching" if caching else "--no-enable-prefix-caching"
-                        )
-                    }
-                    if url
-                    else {}
-                ),
+                **({"engine": engine} if engine else {}),
+                **({"server": _prefix_server(engine, caching=caching)} if engine else {}),
             },
             "label": arm.label,
             "backend": arm.backend,
-            "baseline_label": VLLM_BASELINE_LABEL if url else BASELINE_LABEL,
+            "baseline_label": remote_baseline_label(engine) if engine else BASELINE_LABEL,
             "load": load_block(
                 concurrency=work.concurrency, backend=arm.backend, seed=profile.seed
             ),

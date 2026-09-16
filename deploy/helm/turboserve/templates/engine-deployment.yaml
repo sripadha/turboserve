@@ -1,15 +1,21 @@
 {{/*
-The vLLM engine Deployment.
+The standalone engine Deployment: vLLM or SGLang.
 
-Rendered only for engine.mode == "vllm": in mock and reference mode the engine lives
+Rendered only for the two production modes -- in mock and reference mode the engine lives
 inside the gateway process and there is nothing to deploy here. Splitting them in
 production buys three things that matter more than the extra hop: the GPU node pool scales
 independently of the request-handling tier, a gateway rollout does not restart a process
-holding 60 GB of KV cache, and the engine image is upstream vLLM rather than anything
+holding 60 GB of KV cache, and the engine image is an upstream release rather than anything
 built in this repository, so its version is a value and not a rebuild.
 
-Every flag below comes from values.yaml; see deploy/vllm/README.md for what each one does
-and deploy/vllm/values-h100.yaml for a filled-in single-H100 profile.
+One Deployment serves both engines because only two things differ between them: the image
+and the argv. The pod shape -- GPU limits, /dev/shm, the model cache, the adapters volume,
+the probes, the grace period -- is a property of "a process holding a model on a GPU", not
+of which process it is, and duplicating it per engine is how the two would drift apart.
+
+Every flag below comes from values.yaml; see deploy/vllm/README.md and
+deploy/sglang/README.md for what each one does, and the values-h100.yaml beside each for a
+filled-in single-H100 profile.
 */}}
 {{- if include "turboserve.engine.standalone" . }}
 apiVersion: apps/v1
@@ -66,10 +72,72 @@ spec:
         {{- include "turboserve.adapters.initContainer" . | nindent 8 }}
       {{- end }}
       containers:
-        - name: vllm
-          image: {{ printf "%s:%s" .Values.engine.image.repository .Values.engine.image.tag | quote }}
+        # The container is named after the engine, so `kubectl logs -c sglang` and a pod
+        # description say which one is running without reading the image tag.
+        - name: {{ .Values.engine.mode }}
+          image: {{ include "turboserve.engine.image" . | quote }}
           imagePullPolicy: {{ .Values.engine.image.pullPolicy }}
           args:
+            {{- if eq .Values.engine.mode "sglang" }}
+            - --model-path
+            - {{ .Values.engine.model | quote }}
+            - --host
+            - "0.0.0.0"
+            - --port
+            - {{ .Values.engine.service.port | quote }}
+            - --dtype
+            - {{ .Values.engine.sglang.dtype | quote }}
+            - --context-length
+            - {{ .Values.engine.sglang.contextLength | quote }}
+            - --mem-fraction-static
+            - {{ .Values.engine.sglang.memFractionStatic | quote }}
+            - --max-running-requests
+            - {{ .Values.engine.sglang.maxRunningRequests | quote }}
+            # The prefill token budget per scheduler step. Having one is what makes
+            # prefill chunked, so one long prompt cannot stall every stream in flight;
+            # SGLang has no separate --enable-chunked-prefill.
+            - --chunked-prefill-size
+            - {{ .Values.engine.sglang.chunkedPrefillSize | quote }}
+            - --tp-size
+            - {{ .Values.engine.sglang.tpSize | quote }}
+            - --log-level
+            - {{ .Values.gateway.logLevel | lower | quote }}
+            {{- if not .Values.engine.sglang.enablePrefixCaching }}
+            # RadixAttention prefix caching is on unless it is disabled: identical leading
+            # tokens adopt the KV pages already in the radix tree, so a shared system
+            # prompt is prefilled once per node instead of once per request. Disabling it
+            # is what the prefix-cache benchmark's control server does.
+            - --disable-radix-cache
+            {{- end }}
+            {{- if .Values.engine.sglang.speculative.enabled }}
+            # Draft-then-verify decoding. The draft occupies GPU memory that
+            # memFractionStatic has to leave room for.
+            - --speculative-algorithm
+            - {{ .Values.engine.sglang.speculative.algorithm | quote }}
+            {{- with .Values.engine.sglang.speculative.draftModel }}
+            - --speculative-draft-model-path
+            - {{ . | quote }}
+            {{- end }}
+            - --speculative-num-steps
+            - {{ .Values.engine.sglang.speculative.numSteps | quote }}
+            - --speculative-num-draft-tokens
+            - {{ .Values.engine.sglang.speculative.numDraftTokens | quote }}
+            {{- end }}
+            {{- if .Values.engine.sglang.lora.enabled }}
+            - --max-loras-per-batch
+            - {{ .Values.engine.sglang.lora.maxLorasPerBatch | quote }}
+            {{- if .Values.engine.sglang.lora.paths }}
+            # One flag takes every name=path pair, unlike vLLM's repeated --lora-modules.
+            - --lora-paths
+            {{- range .Values.engine.sglang.lora.paths }}
+            - {{ . | quote }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.engine.sglang.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- else }}
             - --model
             - {{ .Values.engine.model | quote }}
             - --served-model-name
@@ -122,13 +190,17 @@ spec:
             {{- with .Values.engine.vllm.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+            {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.engine.service.port }}
               protocol: TCP
           env:
+            {{- if eq .Values.engine.mode "vllm" }}
+            # SGLang takes its level as a flag (--log-level, above); vLLM reads this.
             - name: VLLM_LOGGING_LEVEL
               value: {{ .Values.gateway.logLevel | quote }}
+            {{- end }}
             - name: HF_HOME
               value: /models
             {{- if .Values.engine.hfTokenSecret.name }}
@@ -139,7 +211,9 @@ spec:
                   key: {{ .Values.engine.hfTokenSecret.key }}
             {{- end }}
             {{- if .Values.engine.apiKeySecret.name }}
-            - name: VLLM_API_KEY
+            # Both servers read the key they require on their own endpoint from this
+            # variable; neither of them knows anything about a tenant.
+            - name: {{ if eq .Values.engine.mode "sglang" }}SGLANG_API_KEY{{ else }}VLLM_API_KEY{{ end }}
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.engine.apiKeySecret.name }}
@@ -149,6 +223,10 @@ spec:
           # minutes, and a liveness probe that fires during them produces an endless
           # restart loop; readiness alone keeps a not-yet-warm engine out of the Service,
           # which is the behaviour that matters.
+          #
+          # GET /health is the probe for both engines: vLLM and SGLang each answer it at
+          # the server root, beside the OpenAI routes under /v1, and it is the same path
+          # OpenAICompatBackend.health() uses from the gateway.
           startupProbe:
             httpGet:
               path: /health

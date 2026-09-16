@@ -36,6 +36,9 @@ helm upgrade --install turboserve deploy/helm/turboserve \
 
 `deploy/vllm/values-h100.yaml` is a values file for a single H100 with prefix caching and
 chunked prefill on; `-f` it instead of the `--set` lines above.
+`--set engine.mode=sglang` with `-f deploy/sglang/values-h100.yaml` installs the same
+deployment on SGLang instead: the gateway, the lanes, the probes and the alerts do not
+change, so everything in this runbook applies to either engine unless it names a flag.
 
 Before shipping a change to either config file, validate it without a cluster:
 
@@ -140,8 +143,10 @@ turboserve lora make-adapters --model Qwen/Qwen2.5-0.5B-Instruct --n 16 --rank 8
 
 1. Put the directory under the adapters source (`engine.adapters.sync.sourceUrl`, synced by
    an init container into the adapters PVC), or into the PVC directly.
-2. Add it to the engine's LoRA options — `EngineConfig.lora` for the reference engine, or
-   `engine.vllm.lora.modules` in the chart for vLLM.
+2. Add it to the engine's LoRA options — `EngineConfig.lora` for the reference engine,
+   `engine.vllm.lora.modules` for vLLM, or `engine.sglang.lora.paths` for SGLang (one
+   `--lora-paths` flag takes every `name=path` pair, and `maxLorasPerBatch` bounds how many
+   distinct adapters one batch may mix).
 3. Map the tenant-facing name to it in that tenant's `adapters:` block. The name a tenant
    sends in the `lora` field is *theirs*; the mapping is what stops one tenant naming
    another's adapter.

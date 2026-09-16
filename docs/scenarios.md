@@ -59,6 +59,13 @@ Four arms, one prompt pool, one load generator:
 | `static_batch` | `static batch` | `StaticBatchHFEngine` — fixed-size padded batches |
 | `reference` | `continuous batching` | this repository's `LLMEngine` via `LocalEngineBackend` |
 | `vllm` | `vLLM` | an OpenAI-compatible server named by `--url` |
+| `sglang` | `SGLang` | the same, with a different server behind the URL |
+
+The two production engines are separate arms and not one "production" arm, because a row has
+to say which server produced it; mechanically they are identical — one `OpenAICompatBackend`
+against one URL — and the engine's name is recorded in `config["engine"]["engine"]`, next to
+whatever that server reported about itself on `/version` and `/get_server_info`. One `--url`
+is one server, so a host running both engines is swept once per engine.
 
 The sweep is over the profile's concurrencies; each (arm, concurrency) pair writes its own
 result file, and the rendered relative table is grouped by concurrency because arms are only
@@ -88,7 +95,8 @@ the first request's settings. The honest consequence is stated in
 
 ```bash
 uv run turboserve bench naive-vs-cb --profile h100
-uv run turboserve bench naive-vs-cb --profile h100 --arm vllm --url http://127.0.0.1:8000
+uv run turboserve bench naive-vs-cb --profile h100 --arm vllm   --url http://127.0.0.1:8000
+uv run turboserve bench naive-vs-cb --profile h100 --arm sglang --url http://127.0.0.1:30000
 ```
 
 `summary["derived"]` carries the engine's own counters for the arm that reported them
@@ -105,15 +113,25 @@ that differ in exactly one flag:
 | --- | --- |
 | `cache off` | the reference engine with `SchedulerConfig.enable_prefix_caching=False` |
 | `cache on` | the same engine with it enabled |
-| `vLLM cache off` | an OpenAI-compatible server at `--baseline-url` |
-| `vLLM cache on` | an OpenAI-compatible server at `--url` |
+| `vLLM cache off` / `SGLang cache off` | an OpenAI-compatible server at `--baseline-url` |
+| `vLLM cache on` / `SGLang cache on` | an OpenAI-compatible server at `--url` |
 
-Two URLs rather than one, because on vLLM prefix caching is a *launch* flag: a client cannot
-turn it off for a single request, and comparing one server against itself would measure
-nothing. For the same reason the two vLLM arms name `vLLM cache off` as their baseline while
-the two engine arms name `cache off`: each pair is only meaningful against its own engine's
-control, and measuring vLLM-with-cache against this repository's engine-without-cache would
-report the difference between two engines as if it were the cache's doing.
+Two URLs rather than one, because on both production engines prefix caching is a *launch*
+flag: a client cannot turn it off for a single request, and comparing one server against
+itself would measure nothing. The flag is not the same one negated — vLLM is started **with**
+`--enable-prefix-caching`, SGLang **without** `--disable-radix-cache`, since RadixAttention
+is on by default — so each arm records the real launch flags of the server that served it.
+
+For the same reason each engine's arms name their own engine's control (`vLLM cache off`,
+`SGLang cache off`) while the two reference-engine arms name `cache off`: a pair is only
+meaningful against a control of its own kind, and measuring SGLang-with-cache against vLLM's
+control, or against this repository's engine without one, would report the difference between
+two engines as if it were the cache's doing.
+
+`--backend` (repeatable: `reference`, `vllm`, `sglang`) selects which engines an invocation
+measures. A pair of URLs names one engine's pair of servers, so asking for both production
+engines in one invocation is **refused** rather than silently attributing one server's
+numbers to the other engine's arm.
 
 The measured phase is preceded by warm-up requests carrying the same prefix
 (`--warmup`, one by default). A block is indexed in the prefix cache only once its tokens
@@ -128,9 +146,11 @@ prompt tokens this run's successful requests sent, clamped to 1.0 because the en
 counter also covers the warm-up.
 
 ```bash
-uv run turboserve bench prefix-cache --profile h100
-uv run turboserve bench prefix-cache --profile h100 \
+uv run turboserve bench prefix-cache --profile h100 --backend reference
+uv run turboserve bench prefix-cache --profile h100 --backend vllm \
   --url http://cache-on:8000 --baseline-url http://cache-off:8001
+uv run turboserve bench prefix-cache --profile h100 --backend sglang \
+  --url http://sglang:30000 --baseline-url http://sglang-noradix:30001
 ```
 
 ## `chaos` — what the gateway hides
@@ -192,7 +212,10 @@ does not have to know what the chart deployed.
 
 ## `spec-decode` and `multi-lora`
 
-Both scenarios can be driven against a vLLM server as well as against the in-process engine,
+Both scenarios can be driven against a vLLM server as well as against the in-process engine
+(SGLang is measured on `naive-vs-cb` and `prefix-cache` only; adding it here would mean its
+own `--label-prefix` and its own target-only control, which is a scenario change rather than
+an environment variable),
 and both say so in the arm's *name*, because the renderer identifies an arm by its label and
 two engines writing into the same results directory would otherwise produce rows that look
 like one measurement made twice. `spec-decode` takes `--label-prefix "vLLM "`, which prefixes
@@ -273,6 +296,8 @@ DRY_RUN=1 ./scripts/run_all_benchmarks.sh     # print the commands, run nothing
 | `RESULTS_DIR` | where result JSON is written (default `results`) |
 | `VLLM_URL` | an OpenAI-compatible vLLM server; enables every `vllm` arm |
 | `VLLM_BASELINE_URL` | a second vLLM server started **without** `--enable-prefix-caching`, the prefix-cache control arm |
+| `SGLANG_URL` | an OpenAI-compatible SGLang server; enables the `sglang` arms of `naive-vs-cb` and `prefix-cache` |
+| `SGLANG_BASELINE_URL` | a second SGLang server started **with** `--disable-radix-cache`, that engine's prefix-cache control arm |
 | `TURBOSERVE` | how to invoke the CLI (default `uv run --frozen turboserve`) |
 | `SKIP` | space-separated scenario names to skip |
 | `ADAPTERS_DIR` | LoRA adapters the `multi-lora` scenario serves (default `adapters`) |
@@ -300,7 +325,8 @@ fabricated one.
 | Result plumbing | the result path naming the scenario and slugging the arm; SLO overrides merging with the profile's; the GPU price read from the provisioning environment and dropped when unparsable |
 | `BaselineBackend` | one terminating event carrying the tokens and a usage block; co-arriving requests in one batch; a late arrival waiting for the next batch; a request the engine refuses failing without killing the driver; health, models and idempotent close |
 | `naive-vs-cb` | all three local arms run against the cached tiny Qwen2 checkpoint and write files that round-trip through the schema, with the label, baseline label, load block and uniform output length; the arms receiving identical prompts and token counts; an arm the profile does not declare rejected |
-| `prefix-cache` | the cache-off arm reporting no cached tokens and no hits while the cache-on arm reports both, from the same prompt pool; a `vllm` arm without a URL rejected |
+| `prefix-cache` | the cache-off arm reporting no cached tokens and no hits while the cache-on arm reports both, from the same prompt pool; a remote arm without a URL rejected; one engine's pair of servers expanding into its own two arms with its own control; one pair of URLs claimed by two engines refused; `--backend` validated against the profile |
+| remote engines | both production engines labelled from one shared mapping; an `sglang` arm driven end to end over a real socket against the mock gateway, recording the engine's name — and running unchanged when that server answers neither `/version` nor `/get_server_info` |
 | `chaos` | a real run through the in-process fleet with a kill schedule, producing the renderer's keys, a chaos block and at least one disruption; the schedule defaulting to the profile's kill cadence |
 | `loadgen` | the CLI against a mock gateway on a **real loopback socket**, in both open and closed loop, writing a file with an error rate and a TTFT tail; `--no-index` honoured; `--rps` without `--duration` refused |
 | `bench` app | the shipped commands present; optional scenarios attached as a command or as a sub-app from a synthetic module, and skipped when absent; `render` writing both pages from result files; the package's lazy exports resolving |
@@ -342,8 +368,10 @@ rates the client's event loop bottlenecks before the server does.
 `max_in_flight_observed` is recorded in every scenario's derived block so such a run is
 visible rather than silently wrong.
 
-**No scenario has been run on a GPU or against a real vLLM server.** Every path above was
-exercised on CPU with a tiny random checkpoint and, for the HTTP arms, against this
-repository's own mock gateway over a loopback socket. The `vllm` arms are built from the
-same `OpenAICompatBackend` the gateway uses in production and are covered by that module's
-tests, but no vLLM process has been contacted from a development checkout.
+**No scenario has been run on a GPU or against a real vLLM or SGLang server.** Every path
+above was exercised on CPU with a tiny random checkpoint and, for the HTTP arms, against this
+repository's own mock gateway over a loopback socket. The `vllm` and `sglang` arms are built
+from the same `OpenAICompatBackend` the gateway uses in production and are covered by that
+module's tests — including its reading of SGLang's `/version` and `/get_server_info` against
+a mock transport — but no vLLM or SGLang process has been contacted from a development
+checkout.

@@ -21,9 +21,12 @@ and only the thing that serves them changes:
     gateway's in-process backend -- a token-level scheduler that admits, preempts and
     retires sequences inside the decode loop.
 
-``vLLM``
+``vLLM`` / ``SGLang``
     The same prompts sent to a production engine over its OpenAI-compatible API
     (``--url``), so the reference engine's row sits next to one a reader already trusts.
+    Both are the same arm mechanically -- one ``OpenAICompatBackend`` against one URL -- and
+    they are separate arms only because a row has to say which server produced it. One
+    invocation measures one server, so a machine running both is swept once per engine.
 
 Three deliberate choices about what is *not* varied.
 
@@ -60,6 +63,7 @@ import typer
 from turboserve.bench.loadgen import build_requests, run_load
 from turboserve.bench.profiles import ProfileError, load_profile
 from turboserve.bench.scenarios.common import (
+    REMOTE_ENGINE_LABELS,
     AnyBackend,
     ArmOutcome,
     EngineOptions,
@@ -76,13 +80,14 @@ from turboserve.bench.scenarios.common import (
     open_run,
     openai_backend,
     reference_backend,
+    remote_server_info,
     resolve_slo,
     result_path,
     write_run,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from turboserve.bench.profiles import BenchProfile, NaiveVsCBProfile
     from turboserve.bench.prompts import BenchPrompt
@@ -94,12 +99,14 @@ __all__ = ["ARM_LABELS", "SCENARIO", "naive_vs_cb_command", "run_scenario"]
 SCENARIO = "naive_vs_cb"
 
 #: How each profile backend name is shown in the rendered tables. The keys are the values
-#: a profile's ``backends`` list may hold; the values are what a reader sees.
+#: a profile's ``backends`` list may hold; the values are what a reader sees. The remote
+#: engines come from ``REMOTE_ENGINE_LABELS`` rather than being spelled again here, so a
+#: production engine is named in exactly one place in this package.
 ARM_LABELS: dict[str, str] = {
     "naive_hf": "naive",
     "static_batch": "static batch",
     "reference": "continuous batching",
-    "vllm": "vLLM",
+    **REMOTE_ENGINE_LABELS,
 }
 
 #: The arm every other arm is compared against in the rendered relative table.
@@ -142,10 +149,12 @@ def _make_backend(
     local_files_only: bool,
 ) -> AnyBackend:
     """Build the backend one arm is served by."""
-    if arm == "vllm":
+    if arm in REMOTE_ENGINE_LABELS:
         if not url:
-            raise ScenarioError("the vllm arm needs --url pointing at an OpenAI-compatible server")
-        return openai_backend(url, name="vllm", api_key=api_key)
+            raise ScenarioError(
+                f"the {arm} arm needs --url pointing at an OpenAI-compatible server"
+            )
+        return openai_backend(url, name=arm, api_key=api_key)
     config = build_engine_config(model, options)
     if arm == "reference":
         return reference_backend(config, local_files_only=local_files_only)
@@ -225,6 +234,9 @@ async def run_scenario(
             api_key=api_key,
             local_files_only=local_files_only,
         )
+        # Asked once per arm rather than once per run: it is a property of the server, not
+        # of the load, and a server that answers nothing must not be re-probed per level.
+        server = await remote_server_info(backend) if arm in REMOTE_ENGINE_LABELS else {}
         try:
             for level in levels:
                 outcomes.append(
@@ -243,6 +255,7 @@ async def run_scenario(
                         slo=slo,
                         options=engine_options,
                         url=url,
+                        server=server,
                         uniform_output=uniform_output,
                     )
                 )
@@ -267,6 +280,7 @@ async def _run_one(
     slo: Any,
     options: EngineOptions,
     url: str | None,
+    server: Mapping[str, Any],
     uniform_output: int,
 ) -> ArmOutcome:
     """One arm at one concurrency: drive the load, summarise it, write the file."""
@@ -294,7 +308,7 @@ async def _run_one(
             **profile.config_for(SCENARIO),
             "model": work_model,
             "output_tokens": uniform_output,
-            "engine": _engine_block(arm, options, url),
+            "engine": _engine_block(arm, options, url, server),
             **({"compare_to": [ARM_LABELS[SECONDARY_ARM]]} if compare_to_static else {}),
         },
     )
@@ -324,10 +338,20 @@ def _mean_output(work: NaiveVsCBProfile) -> int:
     return (work.output_tokens.min + work.output_tokens.max + 1) // 2
 
 
-def _engine_block(arm: str, options: EngineOptions, url: str | None) -> dict[str, Any]:
-    """What served this arm, recorded so a result file can be re-run from itself."""
-    if arm == "vllm":
-        return {"kind": "openai", "url": url}
+def _engine_block(
+    arm: str, options: EngineOptions, url: str | None, server: Mapping[str, Any]
+) -> dict[str, Any]:
+    """What served this arm, recorded so a result file can be re-run from itself.
+
+    A remote arm records the engine's *name* as well as its URL, because the URL says where
+    the server was and not what it was, and ``server`` carries whatever the server itself
+    reported (see :func:`remote_server_info`) -- empty when it reported nothing.
+    """
+    if arm in REMOTE_ENGINE_LABELS:
+        block: dict[str, Any] = {"kind": "openai", "engine": arm, "url": url}
+        if server:
+            block["server"] = dict(server)
+        return block
     return {
         "kind": arm,
         "dtype": options.dtype,
@@ -379,7 +403,13 @@ def naive_vs_cb_command(
     ] = 2,
     url: Annotated[
         str | None,
-        typer.Option("--url", help="OpenAI-compatible server for the vllm arm."),
+        typer.Option(
+            "--url",
+            help=(
+                "OpenAI-compatible server for a remote arm (vllm, sglang). One server per "
+                "invocation: run the scenario once per engine."
+            ),
+        ),
     ] = None,
     api_key: Annotated[
         str | None, typer.Option("--api-key", help="Bearer token for --url.")

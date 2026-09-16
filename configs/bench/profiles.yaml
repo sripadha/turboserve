@@ -30,7 +30,10 @@ profiles:
         input_tokens: {min: 128, max: 1024}
         output_tokens: {min: 64, max: 512}
         concurrencies: [32, 64, 128]
-        backends: [naive_hf, static_batch, reference, vllm]
+        # The two production engines are separate arms rather than one "production" arm:
+        # each is measured against the same prompt pool through its own --url, and a row
+        # has to say which server produced it.
+        backends: [naive_hf, static_batch, reference, vllm, sglang]
 
       prefix_cache:
         model: Qwen/Qwen2.5-7B-Instruct
@@ -41,7 +44,10 @@ profiles:
         output_tokens: {min: 64, max: 128}
         concurrency: 32
         prefix_caching: [false, true]
-        backends: [reference, vllm]
+        # A production engine's prefix cache is a launch flag, so each of these is measured
+        # as a pair of servers (--url and --baseline-url) in its own invocation, selected
+        # with --backend.
+        backends: [reference, vllm, sglang]
 
       spec_decode:
         dtype: bfloat16

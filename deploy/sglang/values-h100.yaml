@@ -1,0 +1,160 @@
+# Helm values for a single NVIDIA H100 80GB node running SGLang.
+#
+#   helm upgrade --install turboserve deploy/helm/turboserve \
+#     -f deploy/sglang/values-h100.yaml --namespace turboserve --create-namespace
+#
+# The vLLM twin of this file is deploy/vllm/values-h100.yaml, and the two are deliberately
+# the same document with one engine swapped: the gateway, the lanes, the monitoring and the
+# capacity arithmetic below do not change with the engine behind them, which is the whole
+# reason both are first-class backends.
+#
+# Sizing arithmetic for the defaults below (Qwen2.5-7B, bf16, one H100 80GB):
+#   weights        ~7.6e9 params x 2 bytes  ~= 15 GiB
+#   KV per token   2 (K and V) x 28 layers x 4 kv-heads x 128 head-dim x 2 bytes
+#                  = 57344 bytes/token ~= 56 KiB
+#   KV budget      0.90 x 80 GiB - 15 GiB - ~2 GiB activations ~= 55 GiB
+#   tokens in KV   55 GiB / 56 KiB ~= 1.0e6 tokens, i.e. ~120 concurrent sequences at the
+#                  8192-token context limit, or many more at realistic lengths.
+# maxRunningRequests is set below that ceiling so the scheduler is the thing that limits
+# concurrency, not the allocator running out of pages mid-decode.
+
+image:
+  repository: ghcr.io/sripadha/turboserve-gateway
+  tag: "0.1.0"
+
+gateway:
+  # The gateway is I/O bound and cheap; two replicas are for availability during a rollout,
+  # not for throughput.
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      memory: 4Gi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+    # Requires a metrics adapter serving turboserve_queue_depth; see docs/kubernetes.md.
+    queueDepth:
+      enabled: false
+      metricName: turboserve_queue_depth
+      averageValue: "16"
+
+engine:
+  mode: sglang
+  model: Qwen/Qwen2.5-7B-Instruct
+  replicaCount: 1
+
+  # SGLang's own default port, so a command line copied from its documentation and the
+  # gateway's `--engine http://<release>-engine:30000/v1` agree. The chart passes the port
+  # to the server explicitly, so this is a convention rather than a requirement.
+  service:
+    port: 30000
+
+  sglang:
+    image:
+      repository: lmsysorg/sglang
+      # Pinned, not floating: an SGLang minor release can change scheduling and invalidate
+      # any comparison made against an earlier run. The version is recorded in every
+      # result file, and /get_server_info reports it from the running server.
+      tag: v0.5.3
+
+    contextLength: 8192
+    # SGLang's equivalent of vLLM's gpu-memory-utilization: the share of the device held by
+    # weights plus KV cache. 0.90 rather than 0.95 for the same reason -- the remaining
+    # headroom absorbs activation spikes during a long prefill.
+    memFractionStatic: 0.90
+    dtype: bfloat16
+    tpSize: 1
+
+    # RadixAttention prefix caching. It is ON in SGLang unless it is disabled, so this key
+    # renders `--disable-radix-cache` when false and nothing when true. Multi-tenant
+    # traffic is full of shared system prompts and few-shot preambles; with the radix tree
+    # in place the shared span is prefilled once per node and every later request that
+    # starts with the same tokens skips that work, which is visible as a drop in TTFT and
+    # in nothing else.
+    enablePrefixCaching: true
+
+    maxRunningRequests: 96
+    # Token budget per scheduler step, which is also what makes prefill chunked: a long
+    # prompt is split across steps instead of stalling every stream already decoding.
+    # Larger keeps the GPU busier on prefill; smaller keeps decode latency smoother.
+    chunkedPrefillSize: 8192
+
+    # Speculative decoding: a draft proposes tokens, the target verifies them in one
+    # forward pass. EAGLE and NEXTN are the two algorithms; both trade GPU memory and some
+    # prefill throughput for lower decode latency, and both only pay off when acceptance is
+    # high. Off by default because the draft's weights come out of the same 80 GB as the
+    # KV cache.
+    speculative:
+      enabled: false
+      algorithm: EAGLE
+      draftModel: Qwen/Qwen2.5-0.5B-Instruct
+      numSteps: 3
+      numDraftTokens: 4
+
+    # Multi-tenant LoRA: many adapters over one set of base weights, chosen per request by
+    # the `model` field. maxLorasPerBatch is how many distinct adapters one batch may mix,
+    # not how many may be registered -- `paths` is the registry.
+    lora:
+      enabled: true
+      maxLorasPerBatch: 8
+      paths: []
+
+  resources:
+    limits:
+      nvidia.com/gpu: 1
+      memory: 96Gi
+    requests:
+      cpu: "8"
+      memory: 64Gi
+
+  nodeSelector:
+    nvidia.com/gpu.product: NVIDIA-H100-80GB-HBM3
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: NoSchedule
+
+  shmSizeGi: 16
+
+  # A 15 GB checkpoint should be downloaded once per node, not once per pod restart.
+  modelCache:
+    enabled: true
+    size: 200Gi
+    accessMode: ReadWriteOnce
+
+  # Gated checkpoints (gemma, llama) need a token; create it before installing:
+  #   kubectl create secret generic hf-token --from-literal=token=hf_xxx -n turboserve
+  hfTokenSecret:
+    name: ""
+    key: token
+
+  adapters:
+    enabled: false
+    mountPath: /adapters
+    persistence:
+      enabled: true
+      size: 50Gi
+    sync:
+      enabled: true
+      sourceUrl: ""
+
+monitoring:
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+  prometheusRule:
+    enabled: true
+  grafanaDashboard:
+    enabled: true
+
+networkPolicy:
+  enabled: true
+
+canary:
+  enabled: false
+  weight: 25

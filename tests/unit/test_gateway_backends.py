@@ -436,3 +436,79 @@ async def test_openai_compat_health_is_false_and_silent_when_unreachable() -> No
 def test_openai_compat_requires_a_base_url() -> None:
     with pytest.raises(ValueError, match="base_url is required"):
         OpenAICompatBackend("")
+
+
+# -- recognising an SGLang server --------------------------------------------------------
+#
+# Nothing on the request path distinguishes the two production engines: the transcripts
+# above are the same bytes whichever of them sent them, which is why adding SGLang as a
+# second backend needed no change to `generate`. What differs is what a server will say
+# about itself, and that is what these tests pin.
+
+
+async def test_openai_compat_reads_an_sglang_servers_version_and_settings() -> None:
+    """The two native endpoints, at the server root rather than under /v1."""
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        if request.url.path == "/version":
+            return httpx.Response(200, json={"version": "0.5.3"})
+        if request.url.path == "/get_server_info":
+            return httpx.Response(
+                200,
+                json={
+                    "server_args": {
+                        "model_path": "Qwen/Qwen2.5-7B-Instruct",
+                        "dtype": "bfloat16",
+                        "disable_radix_cache": False,
+                        "max_loras_per_batch": 8,
+                        # Neither recorded: one is not in the whitelist, the other is not a
+                        # scalar, and a result file is not a copy of an argument parser.
+                        "log_level": "info",
+                        "lora_paths": ["acme=/adapters/acme"],
+                    },
+                    "context_length": 8192,
+                },
+            )
+        return httpx.Response(404)
+
+    backend = backend_with(handler)
+    info = await backend.server_info()
+    assert seen == ["/version", "/get_server_info"]
+    assert info["version"] == "0.5.3"
+    assert info["settings"] == {
+        "model_path": "Qwen/Qwen2.5-7B-Instruct",
+        "dtype": "bfloat16",
+        "disable_radix_cache": False,
+        "max_loras_per_batch": 8,
+        "context_length": 8192,
+    }
+    await backend.close()
+
+
+async def test_openai_compat_server_info_keeps_only_the_version_from_a_vllm_server() -> None:
+    """vLLM answers /version and has no /get_server_info; a 404 there is not an error."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/version":
+            return httpx.Response(200, json={"version": "0.11.0"})
+        return httpx.Response(404, json={"detail": "Not Found"})
+
+    backend = backend_with(handler)
+    assert await backend.server_info() == {"version": "0.11.0"}
+    await backend.close()
+
+
+async def test_openai_compat_server_info_is_empty_and_silent_when_nothing_answers() -> None:
+    """A proxy, an older build or an unreachable server contributes no block at all."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/version":
+            return httpx.Response(200, content=b"not json")
+        raise httpx.ConnectError("down")
+
+    backend = backend_with(handler)
+    assert await backend.server_info() == {}
+    await backend.close()
+    assert await backend.server_info() == {}

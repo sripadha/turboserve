@@ -6,7 +6,7 @@ including the ones we did not like.
 
 | ADR | Decision |
 | --- | --- |
-| [0001](ADR-0001-reference-engine-alongside-vllm.md) | Build a reference engine *and* keep vLLM a first-class backend |
+| [0001](ADR-0001-reference-engine-alongside-vllm.md) | Build a reference engine *and* keep vLLM a first-class backend — with an addendum on the gateway being engine-agnostic (vLLM or SGLang) |
 | [0002](ADR-0002-recompute-vs-swap-preemption.md) | Preempt by recompute, not by swapping KV to host memory |
 | [0003](ADR-0003-hash-based-prefix-cache.md) | Content-addressed (hashed) prefix cache over a radix tree |
 | [0004](ADR-0004-rejection-sampling-verification.md) | Verify speculative drafts with rejection sampling, not "accept if it matches" |

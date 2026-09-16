@@ -36,12 +36,14 @@ from turboserve.bench.records import RunResult
 from turboserve.bench.scenarios import chaos as chaos_scenario
 from turboserve.bench.scenarios import naive_vs_cb, prefix_cache
 from turboserve.bench.scenarios.common import (
+    REMOTE_ENGINE_LABELS,
     BaselineBackend,
     EngineOptions,
     ScenarioError,
     build_prompt_pool,
     gpu_price,
     normalise_base_url,
+    remote_server_info,
     resolve_slo,
     result_path,
 )
@@ -485,19 +487,156 @@ def test_prefix_cache_records_hits_only_when_the_cache_is_on(
     assert payload["summary"]["derived"]["prefix_caching"] is True
 
 
-def test_prefix_cache_needs_a_url_for_a_vllm_arm(
-    tiny_profile: BenchProfile, tmp_path: Path
-) -> None:
-    work = tiny_profile.scenarios.prefix_cache.model_copy(update={"backends": ["vllm"]})
-    profile = tiny_profile.model_copy(
-        update={"scenarios": tiny_profile.scenarios.model_copy(update={"prefix_cache": work})}
+def _with_backends(profile: BenchProfile, scenario: str, backends: list[str]) -> BenchProfile:
+    """The same profile with one scenario's declared backends replaced."""
+    work = profile.scenario(scenario).model_copy(update={"backends": backends})
+    return profile.model_copy(
+        update={"scenarios": profile.scenarios.model_copy(update={scenario: work})}
     )
+
+
+@pytest.mark.parametrize("engine", ["vllm", "sglang"])
+def test_prefix_cache_needs_a_url_for_a_remote_engine_arm(
+    tiny_profile: BenchProfile, tmp_path: Path, engine: str
+) -> None:
+    profile = _with_backends(tiny_profile, "prefix_cache", [engine])
     with pytest.raises(ScenarioError, match="--url"):
         asyncio.run(
             prefix_cache.run_scenario(
                 profile, options=_tiny_engine_options(), results_dir=tmp_path / "results"
             )
         )
+
+
+# --------------------------------------------------------------------------------------
+# two production engines behind one --url path
+#
+# vLLM and SGLang are measured by the same OpenAICompatBackend over the same protocol, so
+# what has to be pinned is not how they are driven but how they are *told apart*: one arm
+# per engine, each engine's own control, and the engine's name in the result file, because
+# a URL says where a server was and not what it was.
+# --------------------------------------------------------------------------------------
+
+
+def test_naive_vs_cb_labels_both_production_engines_from_the_shared_mapping() -> None:
+    assert naive_vs_cb.ARM_LABELS["vllm"] == "vLLM"
+    assert naive_vs_cb.ARM_LABELS["sglang"] == "SGLang"
+    assert set(REMOTE_ENGINE_LABELS) <= set(naive_vs_cb.ARM_LABELS)
+
+
+@pytest.mark.parametrize("engine", ["vllm", "sglang"])
+def test_naive_vs_cb_needs_a_url_for_a_remote_engine_arm(
+    tiny_profile: BenchProfile, tmp_path: Path, engine: str
+) -> None:
+    profile = _with_backends(tiny_profile, "naive_vs_cb", [engine])
+    with pytest.raises(ScenarioError, match=f"{engine} arm needs --url"):
+        asyncio.run(
+            naive_vs_cb.run_scenario(
+                profile,
+                arms=[engine],
+                options=_tiny_engine_options(),
+                results_dir=tmp_path / "results",
+            )
+        )
+
+
+def test_prefix_cache_expands_one_engines_pair_of_servers_into_its_own_two_arms() -> None:
+    arms = prefix_cache._arms(
+        backends=["sglang"],
+        caching_modes=[False, True],
+        url="http://cache-on:30000",
+        baseline_url="http://cache-off:30001",
+    )
+    assert [arm.label for arm in arms] == ["SGLang cache off", "SGLang cache on"]
+    assert [arm.backend_name for arm in arms] == ["sglang-nocache", "sglang"]
+    assert [arm.caching for arm in arms] == [False, True]
+    # Each arm is measured against its own engine's control, never against vLLM's or the
+    # reference engine's: the cache is the variable, the engine is not.
+    assert {arm.baseline_label for arm in arms} == {"SGLang cache off"}
+    assert {arm.engine for arm in arms} == {"sglang"}
+
+
+def test_prefix_cache_refuses_to_attribute_one_pair_of_urls_to_two_engines() -> None:
+    with pytest.raises(ScenarioError, match="--backend"):
+        prefix_cache._arms(
+            backends=["vllm", "sglang"],
+            caching_modes=[False, True],
+            url="http://cache-on:8000",
+            baseline_url=None,
+        )
+
+
+def test_prefix_cache_backend_selection_validates_against_the_profile() -> None:
+    available = ["reference", "vllm", "sglang"]
+    assert prefix_cache._select_backends(available, None) == available
+    assert prefix_cache._select_backends(available, ["sglang"]) == ["sglang"]
+    with pytest.raises(ScenarioError, match="unknown backend"):
+        prefix_cache._select_backends(available, ["tensorrt"])
+    with pytest.raises(ScenarioError, match="not in the profile"):
+        prefix_cache._select_backends(["reference"], ["sglang"])
+
+
+@pytest.mark.timeout(120)
+def test_naive_vs_cb_records_which_engine_served_a_remote_arm(
+    tiny_profile: BenchProfile, mock_server: str, tmp_path: Path
+) -> None:
+    """The SGLang arm end to end, over a real socket, through the ordinary --url path.
+
+    The server is this repository's mock gateway, not SGLang -- what is under test is that
+    a remote arm needs nothing but a URL and that the file says which engine it was. The
+    mock answers neither /version nor /get_server_info, so the probe contributes nothing
+    and the arm still runs, which is the degradation every non-SGLang server relies on.
+    """
+    profile = _with_backends(tiny_profile, "naive_vs_cb", ["sglang"])
+    outcomes = asyncio.run(
+        naive_vs_cb.run_scenario(
+            profile,
+            arms=["sglang"],
+            url=mock_server,
+            options=_tiny_engine_options(),
+            results_dir=tmp_path / "results",
+            warmup=0,
+        )
+    )
+    assert [(o.backend, o.label) for o in outcomes] == [("sglang", "SGLang")]
+    payload = _loaded(outcomes[0].path)
+    assert payload["config"]["backend"] == "sglang"
+    assert payload["config"]["engine"] == {
+        "kind": "openai",
+        "engine": "sglang",
+        "url": mock_server,
+    }
+    assert payload["summary"]["num_requests"] == 2
+
+
+@pytest.mark.timeout(120)
+def test_prefix_cache_runs_a_remote_engine_arm_and_names_its_own_control(
+    tiny_profile: BenchProfile, mock_server: str, tmp_path: Path
+) -> None:
+    profile = _with_backends(tiny_profile, "prefix_cache", ["reference", "sglang"])
+    outcomes = asyncio.run(
+        prefix_cache.run_scenario(
+            profile,
+            backends=["sglang"],
+            url=mock_server,
+            options=_tiny_engine_options(),
+            results_dir=tmp_path / "results",
+            warmup=0,
+        )
+    )
+    assert [(o.backend, o.label) for o in outcomes] == [("sglang", "SGLang cache on")]
+    payload = _loaded(outcomes[0].path)
+    assert payload["config"]["baseline_label"] == "SGLang cache off"
+    engine = payload["config"]["engine"]
+    assert engine["kind"] == "openai"
+    assert engine["engine"] == "sglang"
+    assert engine["enable_prefix_caching"] is True
+    assert "server" not in engine  # the mock gateway reports nothing about itself
+
+
+def test_remote_server_info_is_empty_for_a_backend_that_reports_nothing() -> None:
+    backend = BaselineBackend(_FakeBaselineEngine(), batch_window_s=0.0)
+    assert asyncio.run(remote_server_info(backend)) == {}
 
 
 @pytest.mark.timeout(120)

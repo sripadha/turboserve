@@ -7,8 +7,8 @@ Default-deny for both components, then exactly the flows that exist:
   everything         -> kube-dns:53
 
 The engine policy is the one that earns its keep: without it, any pod in the namespace can
-POST to vLLM directly and bypass authentication, quotas and per-tenant accounting
-entirely, because vLLM has no notion of a tenant.
+POST to the engine directly and bypass authentication, quotas and per-tenant accounting
+entirely, because neither vLLM nor SGLang has any notion of a tenant.
 */}}
 {{- if .Values.networkPolicy.enabled }}
 apiVersion: networking.k8s.io/v1

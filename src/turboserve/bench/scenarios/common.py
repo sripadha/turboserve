@@ -72,6 +72,7 @@ __all__ = [
     "DEFAULT_VOCAB_SIZE",
     "GPU_PRICE_ENV",
     "GPU_PRICE_SOURCE_ENV",
+    "REMOTE_ENGINE_LABELS",
     "ArmOutcome",
     "BaselineBackend",
     "BaselineKind",
@@ -91,6 +92,7 @@ __all__ = [
     "openai_backend",
     "open_run",
     "reference_backend",
+    "remote_server_info",
     "resolve_slo",
     "result_path",
     "run_timestamp",
@@ -109,6 +111,18 @@ DEFAULT_VOCAB_SIZE = 32_000
 #: Environment variables ``scripts/vastai/run_remote.sh`` exports on the measurement host.
 GPU_PRICE_ENV = "TURBOSERVE_GPU_PRICE_PER_HOUR"
 GPU_PRICE_SOURCE_ENV = "TURBOSERVE_GPU_PRICE_SOURCE"
+
+#: The production engines a scenario can measure over an OpenAI-compatible URL, and how
+#: each is named in a rendered table. They are *arms*, not backend types: all of them are
+#: served by :class:`~turboserve.gateway.backends.openai_compat.OpenAICompatBackend` over
+#: the same protocol, and the name exists so that a result file says which server produced
+#: it and two engines writing into one results directory do not render as one arm measured
+#: twice. Scenarios that take a ``--url`` build their arm names from this mapping, so an
+#: engine is added here once rather than in each scenario.
+REMOTE_ENGINE_LABELS: dict[str, str] = {
+    "vllm": "vLLM",
+    "sglang": "SGLang",
+}
 
 BaselineKind = Literal["naive_hf", "static_batch"]
 """Which ``transformers`` baseline to build: one request per call, or fixed-size batches."""
@@ -528,7 +542,13 @@ def openai_backend(
     api_key: str | None = None,
     timeout_s: float = 600.0,
 ) -> OpenAICompatBackend:
-    """A backend pointed at an OpenAI-compatible server (vLLM, or this repo's gateway)."""
+    """A backend pointed at an OpenAI-compatible server (vLLM, SGLang, this repo's gateway).
+
+    ``name`` is the arm's name in the result file, not a switch: the same class drives every
+    such server, because the request body, the SSE framing and the usage block are the same
+    protocol. What the server is gets *recorded* by :func:`remote_server_info`, not assumed
+    here.
+    """
     from turboserve.gateway.backends.openai_compat import OpenAICompatBackend
 
     return OpenAICompatBackend(
@@ -537,6 +557,30 @@ def openai_backend(
         api_key=api_key,
         timeout_s=timeout_s,
     )
+
+
+async def remote_server_info(backend: AnyBackend) -> dict[str, Any]:
+    """What a remote server says about itself, for the arm's ``engine`` block.
+
+    A client cannot see the flags a server was started with, and those flags are most of
+    what a benchmark number means -- whether the prefix cache was on, what the context
+    window was, which speculative algorithm was running. SGLang answers ``/version`` and
+    ``/get_server_info``, vLLM answers ``/version``, and anything else answers neither; all
+    three cases are fine, because the block is recorded when it exists and omitted when it
+    does not.
+
+    Never fails a run: a server that refuses the probe contributes nothing, exactly as a
+    backend with no engine counters contributes no counters.
+    """
+    probe = getattr(backend, "server_info", None)
+    if not callable(probe):
+        return {}
+    try:
+        info = await probe()
+    except Exception:  # noqa: BLE001 - provenance must never fail a measurement
+        logger.debug("backend %r could not report server info", backend, exc_info=True)
+        return {}
+    return dict(info) if isinstance(info, dict) else {}
 
 
 def normalise_base_url(url: str) -> str:

@@ -20,11 +20,19 @@ pool is sent to two arms that differ in exactly one engine flag:
     the pool adopts them instead of recomputing, so its prefill is proportional to its
     unique suffix rather than to its whole prompt.
 
-The same comparison is available against a production engine through ``--url`` (a vLLM
-server started with ``--enable-prefix-caching``) and ``--baseline-url`` (one started
-without it). Two URLs rather than one, because on vLLM prefix caching is a launch flag: a
-client cannot turn it off for one request, and pretending otherwise would compare a server
-against itself.
+The same comparison is available against a production engine through ``--url`` (the server
+whose cache is on) and ``--baseline-url`` (the one whose cache is off). Two URLs rather
+than one, because on both production engines prefix caching is a launch flag: a client
+cannot turn it off for one request, and pretending otherwise would compare a server against
+itself. The flag differs -- vLLM is started *with* ``--enable-prefix-caching`` and SGLang is
+started *without* ``--disable-radix-cache``, since RadixAttention is on by default -- but
+the experiment does not: two servers, one prompt pool, one client.
+
+``--backend`` selects which of the profile's engines an invocation measures (``reference``,
+``vllm``, ``sglang``). A pair of URLs names one pair of servers, so a profile that lists
+both production engines is measured by running the scenario once per engine, and asking for
+both in one invocation is refused rather than silently attributing one server's numbers to
+the other engine's arm.
 
 Two details that decide whether the experiment measures anything at all:
 
@@ -51,6 +59,7 @@ import typer
 from turboserve.bench.loadgen import build_requests, run_load
 from turboserve.bench.profiles import ProfileError, load_profile
 from turboserve.bench.scenarios.common import (
+    REMOTE_ENGINE_LABELS,
     AnyBackend,
     ArmOutcome,
     EngineOptions,
@@ -66,48 +75,67 @@ from turboserve.bench.scenarios.common import (
     open_run,
     openai_backend,
     reference_backend,
+    remote_server_info,
     resolve_slo,
     result_path,
     write_run,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from turboserve.bench.profiles import BenchProfile
     from turboserve.bench.prompts import BenchPrompt
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["SCENARIO", "Arm", "prefix_cache_command", "run_scenario"]
+__all__ = ["SCENARIO", "Arm", "prefix_cache_command", "remote_baseline_label", "run_scenario"]
 
 SCENARIO = "prefix_cache"
 
 #: The arm the reference engine's arms are compared against in the rendered relative table.
 BASELINE_LABEL = "cache off"
 
-#: The control arm of the vLLM pair. A vLLM server's prefix cache is a launch flag, so the
-#: two vLLM arms are two servers, and their comparison only means anything against each
-#: other: measuring vLLM-with-cache against *this repository's* engine-without-cache would
-#: report the difference between two engines as if it were the cache's doing.
-VLLM_BASELINE_LABEL = "vLLM cache off"
+
+def remote_baseline_label(engine: str) -> str:
+    """The control arm's label for one remote engine, e.g. ``"SGLang cache off"``.
+
+    A production server's prefix cache is a launch flag, so each engine's two arms are two
+    servers, and their comparison only means anything against each other: measuring
+    SGLang-with-cache against vLLM-without-cache, or against *this repository's* engine
+    without one, would report the difference between two engines as if it were the cache's
+    doing. Every remote arm therefore names its own engine's control here.
+    """
+    return f"{REMOTE_ENGINE_LABELS[engine]} {BASELINE_LABEL}"
 
 
 class Arm:
     """One configuration of the experiment: a label and how to build its backend."""
 
-    __slots__ = ("backend_name", "caching", "label", "url")
+    __slots__ = ("backend_name", "caching", "engine", "label", "url")
 
-    def __init__(self, label: str, *, backend_name: str, caching: bool, url: str | None = None):
+    def __init__(
+        self,
+        label: str,
+        *,
+        backend_name: str,
+        caching: bool,
+        url: str | None = None,
+        engine: str | None = None,
+    ):
         self.label = label
         self.backend_name = backend_name
         self.caching = caching
         self.url = url
+        #: Which production engine serves this arm (``None`` for the reference engine).
+        #: Recorded in the result file, because a URL says where a server was and not what
+        #: it was.
+        self.engine = engine
 
     @property
     def baseline_label(self) -> str:
         """The cache-off arm of this arm's own engine, which is what it is measured against."""
-        return VLLM_BASELINE_LABEL if self.url is not None else BASELINE_LABEL
+        return remote_baseline_label(self.engine) if self.engine else BASELINE_LABEL
 
     def build(self, model: str, options: EngineOptions, *, local_files_only: bool) -> AnyBackend:
         """Instantiate the backend this arm is served by."""
@@ -117,7 +145,29 @@ class Arm:
         return reference_backend(config, name=self.backend_name, local_files_only=local_files_only)
 
     def __repr__(self) -> str:
-        return f"Arm(label={self.label!r}, caching={self.caching}, url={self.url!r})"
+        return (
+            f"Arm(label={self.label!r}, caching={self.caching}, engine={self.engine!r}, "
+            f"url={self.url!r})"
+        )
+
+
+def _select_backends(available: Sequence[str], requested: Sequence[str] | None) -> list[str]:
+    """The engines to measure, in the profile's order, validated against what it declares."""
+    if not requested:
+        return list(available)
+    known = ("reference", *REMOTE_ENGINE_LABELS)
+    unknown = [name for name in requested if name not in known]
+    if unknown:
+        raise ScenarioError(
+            f"unknown backend(s) {', '.join(unknown)}; known: {', '.join(sorted(known))}"
+        )
+    missing = [name for name in requested if name not in available]
+    if missing:
+        raise ScenarioError(
+            f"backend(s) {', '.join(missing)} are not in the profile's backends "
+            f"({', '.join(available)})"
+        )
+    return [name for name in available if name in requested]
 
 
 def _arms(
@@ -127,7 +177,7 @@ def _arms(
     url: str | None,
     baseline_url: str | None,
 ) -> list[Arm]:
-    """Expand the profile's backends and caching modes into concrete arms.
+    """Expand the selected backends and caching modes into concrete arms.
 
     The reference engine contributes one arm per mode because the mode is a configuration
     flag it can be constructed with; a remote server contributes one arm per URL, because
@@ -144,23 +194,43 @@ def _arms(
                     caching=caching,
                 )
             )
-    if "vllm" in backends:
+    remote = [name for name in backends if name in REMOTE_ENGINE_LABELS]
+    if remote and (url or baseline_url):
+        if len(remote) > 1:
+            # One pair of URLs is one pair of servers. Guessing which engine they belong to
+            # would put a measurement of one server under the other engine's name, which is
+            # the one mistake this scenario's whole two-URL design exists to avoid.
+            raise ScenarioError(
+                f"--url/--baseline-url name one engine's servers, but {', '.join(remote)} "
+                "are both selected; pick one with --backend and run the scenario once per "
+                "engine"
+            )
+        engine = remote[0]
         if baseline_url:
             arms.append(
                 Arm(
-                    "vLLM cache off",
-                    backend_name="vllm-nocache",
+                    remote_baseline_label(engine),
+                    backend_name=f"{engine}-nocache",
                     caching=False,
                     url=baseline_url,
+                    engine=engine,
                 )
             )
         if url:
-            arms.append(Arm("vLLM cache on", backend_name="vllm", caching=True, url=url))
+            arms.append(
+                Arm(
+                    f"{REMOTE_ENGINE_LABELS[engine]} cache on",
+                    backend_name=engine,
+                    caching=True,
+                    url=url,
+                    engine=engine,
+                )
+            )
     if not arms:
         raise ScenarioError(
-            "no arms to run: the profile lists "
-            f"{', '.join(backends) or 'no backends'}; a vllm arm additionally needs --url "
-            "and/or --baseline-url"
+            "no arms to run: the selected backends are "
+            f"{', '.join(backends) or 'none'}; a remote engine's arms additionally need "
+            "--url and/or --baseline-url"
         )
     return arms
 
@@ -168,6 +238,7 @@ def _arms(
 async def run_scenario(
     profile: BenchProfile,
     *,
+    backends: Sequence[str] | None = None,
     model: str | None = None,
     num_requests: int | None = None,
     concurrency: int | None = None,
@@ -195,7 +266,7 @@ async def run_scenario(
     slo = resolve_slo(work.slo, ttft_ms=slo_ttft_ms, tpot_ms=slo_tpot_ms, e2e_ms=slo_e2e_ms)
     base_dir = results_dir if results_dir is not None else default_results_dir()
     arms = _arms(
-        backends=work.backends,
+        backends=_select_backends(work.backends, backends),
         caching_modes=work.prefix_caching,
         url=url,
         baseline_url=baseline_url,
@@ -272,6 +343,7 @@ async def _run_arm(
         len(requests),
         prefix_tokens,
     )
+    server = await remote_server_info(backend) if arm.engine else {}
     load = await run_load(requests, backend.generate, spec=spec, warmup=warm_requests)
 
     run = open_run(
@@ -285,14 +357,7 @@ async def _run_arm(
             **profile.config_for(SCENARIO),
             "model": model,
             "shared_prefix_tokens": prefix_tokens,
-            "engine": {
-                "kind": "openai" if arm.url else "reference",
-                "url": arm.url,
-                "enable_prefix_caching": arm.caching,
-                "dtype": options.dtype,
-                "device": options.device,
-                "block_size": options.block_size,
-            },
+            "engine": _engine_block(arm, options, server),
         },
     )
     load.into(run)
@@ -310,6 +375,29 @@ async def _run_arm(
         summary=dict(run.summary),
         derived=derived,
     )
+
+
+def _engine_block(arm: Arm, options: EngineOptions, server: Mapping[str, Any]) -> dict[str, Any]:
+    """What served this arm, recorded so a result file can be re-run from itself.
+
+    ``enable_prefix_caching`` is the experiment's variable and is recorded for every arm,
+    whether it was a constructor flag (the reference engine) or a launch flag on a server
+    this process did not start; ``server`` is what that server said about itself, which is
+    the only way a reader can check the claim.
+    """
+    block: dict[str, Any] = {
+        "kind": "openai" if arm.url else "reference",
+        "url": arm.url,
+        "enable_prefix_caching": arm.caching,
+        "dtype": options.dtype,
+        "device": options.device,
+        "block_size": options.block_size,
+    }
+    if arm.engine:
+        block["engine"] = arm.engine
+    if server:
+        block["server"] = dict(server)
+    return block
 
 
 def _derived(
@@ -344,6 +432,17 @@ def prefix_cache_command(
     profiles_path: Annotated[
         Path | None, typer.Option("--profiles", help="Alternative profiles file.")
     ] = None,
+    backend: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--backend",
+            help=(
+                "Restrict to these engines (reference, vllm, sglang); repeatable. "
+                "--url/--baseline-url name one engine's servers, so a profile listing more "
+                "than one remote engine is measured once per engine."
+            ),
+        ),
+    ] = None,
     model: Annotated[
         str | None, typer.Option("--model", help="Override the profile's checkpoint.")
     ] = None,
@@ -367,11 +466,20 @@ def prefix_cache_command(
     ] = 1,
     url: Annotated[
         str | None,
-        typer.Option("--url", help="OpenAI-compatible server started WITH prefix caching."),
+        typer.Option(
+            "--url",
+            help=(
+                "OpenAI-compatible server whose prefix cache is ON (vLLM with "
+                "--enable-prefix-caching; SGLang without --disable-radix-cache)."
+            ),
+        ),
     ] = None,
     baseline_url: Annotated[
         str | None,
-        typer.Option("--baseline-url", help="OpenAI-compatible server started WITHOUT it."),
+        typer.Option(
+            "--baseline-url",
+            help="The same engine's server with its prefix cache OFF: the control arm.",
+        ),
     ] = None,
     dtype: Annotated[
         str | None, typer.Option("--dtype", help="Override the profile's dtype.")
@@ -418,6 +526,7 @@ def prefix_cache_command(
         outcomes = asyncio.run(
             run_scenario(
                 loaded,
+                backends=backend,
                 model=model,
                 num_requests=num_requests,
                 concurrency=concurrency,
