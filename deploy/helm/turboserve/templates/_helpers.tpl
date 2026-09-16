@@ -95,15 +95,16 @@ The engine container image.
 (the default) the image follows `engine.mode`, so switching engines is one value rather
 than three that have to be kept consistent -- a vLLM image started with SGLang's argv fails
 in a way that looks like a bad flag rather than like the wrong container.
+
+The two halves are overridden independently: a mirror is usually the same image at the same
+version under a different host, so an empty `engine.image.tag` keeps the pinned tag of the
+mode's own image rather than rendering a reference that ends in a bare colon.
 */}}
 {{- define "turboserve.engine.image" -}}
-{{- if .Values.engine.image.repository -}}
-{{- printf "%s:%s" .Values.engine.image.repository .Values.engine.image.tag -}}
-{{- else if eq .Values.engine.mode "sglang" -}}
-{{- printf "%s:%s" .Values.engine.sglang.image.repository .Values.engine.sglang.image.tag -}}
-{{- else -}}
-{{- printf "%s:%s" .Values.engine.vllm.image.repository .Values.engine.vllm.image.tag -}}
-{{- end -}}
+{{- $engine := ternary .Values.engine.sglang.image .Values.engine.vllm.image (eq .Values.engine.mode "sglang") -}}
+{{- $repository := default $engine.repository .Values.engine.image.repository -}}
+{{- $tag := default $engine.tag .Values.engine.image.tag -}}
+{{- printf "%s:%s" $repository $tag -}}
 {{- end -}}
 
 {{/* In-cluster base URL of the engine's OpenAI-compatible API. */}}
@@ -271,7 +272,8 @@ canary, it is a rollback, and the controller has its own way of expressing that.
 
 {{/*
 The adapter-sync init container, shared by the gateway (reference mode) and the engine
-(vllm mode). It runs on every pod start rather than as a CronJob so that a pod which comes
+(either production mode -- vLLM reads the volume through --lora-modules and SGLang through
+--lora-paths). It runs on every pod start rather than as a CronJob so that a pod which comes
 up after an adapter was published cannot serve a stale set.
 */}}
 {{- define "turboserve.adapters.initContainer" -}}

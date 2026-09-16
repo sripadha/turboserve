@@ -19,7 +19,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DeviceName = Literal["auto", "cuda", "cpu"]
 DTypeName = Literal["auto", "float16", "bfloat16", "float32"]
-EngineName = Literal["reference", "mock", "vllm"]
+EngineName = Literal["reference", "mock", "vllm", "sglang"]
 SchedulerPolicy = Literal["fcfs", "tenant_fair"]
 
 ENV_PREFIX = "TURBOSERVE_"

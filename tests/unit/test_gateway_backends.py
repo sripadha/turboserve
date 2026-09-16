@@ -487,6 +487,35 @@ async def test_openai_compat_reads_an_sglang_servers_version_and_settings() -> N
     await backend.close()
 
 
+async def test_openai_compat_falls_back_to_get_server_info_for_the_version() -> None:
+    """SGLang reports its version inside `/get_server_info`, and not every build routes
+    `/version`. A server whose settings are recorded without a version is a server whose
+    settings cannot be looked up, so the document's own field is the fallback."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/get_server_info":
+            return httpx.Response(
+                200,
+                json={
+                    "version": "0.5.3",
+                    "model_path": "Qwen/Qwen2.5-7B-Instruct",
+                    "disable_radix_cache": True,
+                },
+            )
+        return httpx.Response(404, json={"detail": "Not Found"})
+
+    backend = backend_with(handler)
+    info = await backend.server_info()
+    assert info == {
+        "version": "0.5.3",
+        "settings": {
+            "model_path": "Qwen/Qwen2.5-7B-Instruct",
+            "disable_radix_cache": True,
+        },
+    }
+    await backend.close()
+
+
 async def test_openai_compat_server_info_keeps_only_the_version_from_a_vllm_server() -> None:
     """vLLM answers /version and has no /get_server_info; a 404 there is not an error."""
 

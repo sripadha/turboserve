@@ -138,20 +138,21 @@ repository uses:
 | Endpoint | Used for |
 | --- | --- |
 | `GET /health` | The chart's startup and readiness probes, and `OpenAICompatBackend.health()` |
-| `GET /version` | `{"version": ...}` — recorded in the result file of any benchmark arm served by this server |
-| `GET /get_server_info` | The model path, dtype, context length and scheduler settings the server was launched with |
+| `GET /version` | `{"version": ...}`, on the builds that route it — this is vLLM's endpoint, and SGLang reports its version in `/get_server_info` regardless |
+| `GET /get_server_info` | The version, model path, dtype, context length and scheduler settings the server is running with |
 
 `OpenAICompatBackend.server_info()` reads the last two when they are reachable and records
-what they said; nothing else in the gateway distinguishes SGLang from vLLM, because nothing
+what they said, in the result file of every benchmark arm this server served; nothing else in the gateway distinguishes SGLang from vLLM, because nothing
 else has to — the request body, the SSE framing, `stream_options.include_usage` and
 `ignore_eos` are identical on both.
 
 ## Metrics
 
-SGLang exports its own `sglang:*` series. As with vLLM, they would be scraped as a separate
-Prometheus job so that an engine restart does not fire the gateway's availability alerts —
-the gateway reports that as backend errors of its own, which is the signal a client actually
-experiences. The Grafana dashboard in `deploy/grafana/dashboards/turboserve.json` is built
+SGLang exports its own `sglang:*` series, but only when it is started with
+`--enable-metrics`, which neither the chart nor `launch.sh` passes. Were it on, they would
+be scraped as a separate Prometheus job, as vLLM's are, so that an engine restart does not
+fire the gateway's availability alerts — the gateway reports that as backend errors of its
+own, which is the signal a client actually experiences. The Grafana dashboard in `deploy/grafana/dashboards/turboserve.json` is built
 entirely on gateway metrics for the same reason: it is a view of what tenants see, not of
 what the engine is doing internally.
 

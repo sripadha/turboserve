@@ -9,7 +9,7 @@ holding 60 GB of KV cache, and the engine image is an upstream release rather th
 built in this repository, so its version is a value and not a rebuild.
 
 One Deployment serves both engines because only two things differ between them: the image
-and the argv. The pod shape -- GPU limits, /dev/shm, the model cache, the adapters volume,
+and the command line it is started with. The pod shape -- GPU limits, /dev/shm, the model cache, the adapters volume,
 the probes, the grace period -- is a property of "a process holding a model on a GPU", not
 of which process it is, and duplicating it per engine is how the two would drift apart.
 
@@ -77,6 +77,14 @@ spec:
         - name: {{ .Values.engine.mode }}
           image: {{ include "turboserve.engine.image" . | quote }}
           imagePullPolicy: {{ .Values.engine.image.pullPolicy }}
+          {{- if eq .Values.engine.mode "sglang" }}
+          # The official SGLang image entrypoints into a shell rather than into its server,
+          # so the module is named here; `vllm/vllm-openai` already entrypoints into its
+          # OpenAI server, which is why only one of the two modes needs this line. Without
+          # it the flags below would be handed to bash and the pod would crash-loop on the
+          # first one. docker-compose.yml sets the same entrypoint for the same reason.
+          command: ["python3", "-m", "sglang.launch_server"]
+          {{- end }}
           args:
             {{- if eq .Values.engine.mode "sglang" }}
             - --model-path

@@ -61,8 +61,10 @@ _DATA_PREFIX: Final = "data:"
 _DONE: Final = "[DONE]"
 
 #: Native (non-OpenAI) endpoints asked for by :meth:`OpenAICompatBackend.server_info`.
-#: ``/version`` is served by both vLLM and SGLang; ``/get_server_info`` is SGLang's, and a
-#: server that answers it is therefore an SGLang server.
+#: ``/version`` is vLLM's; ``/get_server_info`` is SGLang's, and a server that answers it is
+#: therefore an SGLang server. SGLang reports its own version *inside* that document rather
+#: than relying on a ``/version`` route, so neither endpoint is required for a version to be
+#: recorded -- see :meth:`OpenAICompatBackend.server_info`.
 _VERSION_PATH: Final = "/version"
 _SERVER_INFO_PATH: Final = "/get_server_info"
 
@@ -390,10 +392,15 @@ class OpenAICompatBackend:
 
         Two native endpoints, neither of them part of the OpenAI API:
 
-        * ``GET /version`` -> ``{"version": ...}``. vLLM and SGLang both serve it.
+        * ``GET /version`` -> ``{"version": ...}``. vLLM's, and served by some SGLang builds.
         * ``GET /get_server_info`` -> the launch configuration (model path, dtype, context
-          length, scheduler settings). This one is SGLang's, so an answer here is how a
-          server identifies itself as SGLang rather than vLLM.
+          length, scheduler settings) *and* the running server's own ``version``. This one is
+          SGLang's, so an answer here is how a server identifies itself as SGLang rather than
+          vLLM.
+
+        The version is taken from whichever of them answered, ``/version`` first: an SGLang
+        build that serves no ``/version`` route would otherwise be recorded with settings and
+        no version, which is the one field a reader needs to look the settings up.
 
         The result belongs in a benchmark's result file, where it is the difference between
         "an OpenAI-compatible server at this URL" and a run somebody else can reproduce: the
@@ -411,7 +418,12 @@ class OpenAICompatBackend:
         version = await self._get_root_json(_VERSION_PATH)
         if isinstance(version, Mapping) and isinstance(version.get("version"), str):
             info["version"] = version["version"]
-        settings = _server_settings(await self._get_root_json(_SERVER_INFO_PATH))
+        payload = await self._get_root_json(_SERVER_INFO_PATH)
+        if "version" not in info and isinstance(payload, Mapping):
+            reported = payload.get("version")
+            if isinstance(reported, str):
+                info["version"] = reported
+        settings = _server_settings(payload)
         if settings:
             info["settings"] = settings
         return info

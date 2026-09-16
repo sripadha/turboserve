@@ -256,5 +256,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `.gitignore` and `.dockerignore` anchor the LoRA adapter rule as `/adapters/`. Unanchored,
   it matched at every depth and would have silently excluded a source or fixture directory
   named `adapters/` (for example `src/turboserve/engine/lora/adapters/`).
+- The chart starts SGLang through `python3 -m sglang.launch_server`. `lmsysorg/sglang`
+  entrypoints into a shell rather than into its server — unlike `vllm/vllm-openai`, which is
+  why `engine.mode: vllm` needs no command — so `engine.mode: sglang` rendered a pod that
+  handed SGLang's flags to bash and crash-looped, having passed `helm lint` and kubeconform
+  on the way. `docker-compose.yml` already set the entrypoint; a unit test now holds the two
+  paths together.
+- `OpenAICompatBackend.server_info()` takes the version from `/get_server_info` when the
+  server has no `/version` route. `/version` is vLLM's endpoint; SGLang reports its version
+  inside its own document, and a benchmark file that recorded a server's launch settings
+  without the version they belong to records settings nobody can look up.
+- `turboserve.engine.image` falls back to the pinned tag of `engine.mode`'s own image when
+  `engine.image.tag` is empty. Overriding only the repository — the documented way to point
+  at a mirror — rendered an image reference ending in a bare colon.
+- `deploy/vllm/README.md`, `deploy/vllm/launch.sh` and the chart's values header no longer
+  print `turboserve gateway serve --engine vllm --engine-url <url>`. `--engine` takes
+  `config`, `mock` or a base URL and there is no `--engine-url`, so the documented command
+  exited 2; `deploy/sglang/README.md` had it right and the vLLM side now matches.
 
 [Unreleased]: https://github.com/sripadha/turboserve/commits/main

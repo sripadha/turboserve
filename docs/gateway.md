@@ -271,11 +271,13 @@ difference:
 | Endpoint | vLLM | SGLang | Used for |
 | --- | --- | --- | --- |
 | `GET /health` | yes | yes | `health()`, and the chart's startup/readiness probes |
-| `GET /version` | yes | yes | `{"version": ...}` |
-| `GET /get_server_info` | no | yes | model path, dtype, context length, scheduler settings |
+| `GET /version` | yes | some builds | `{"version": ...}` |
+| `GET /get_server_info` | no | yes | the running server's version, model path, dtype, context length, scheduler settings |
 
-`server_info()` asks for both, keeps a documented whitelist of scalar settings out of the
-second, and returns `{}` when neither answers — it never raises and is never on a request
+`server_info()` asks for both, takes the version from whichever of them answered (`/version`
+first, the second document's own `version` field otherwise, because settings recorded
+without a version are settings nobody can look up), keeps a documented whitelist of scalar
+settings out of the second, and returns `{}` when neither answers — it never raises and is never on a request
 path. A server that answers `/get_server_info` is an SGLang server, which is how a benchmark
 result file can record what a client otherwise cannot see: whether the radix cache was
 disabled, what the context window was, how many adapters a batch could mix. Those flags are

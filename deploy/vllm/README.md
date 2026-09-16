@@ -2,12 +2,14 @@
 
 The reference engine in `src/turboserve/engine/` exists to make the serving techniques
 legible: you can read the scheduler, the block allocator and the rejection-sampling
-verifier in an afternoon. It is not the thing you would run a fleet on. vLLM is, and the
-gateway treats both as first-class backends so that the same requests, the same tenants and
-the same metrics can be pointed at either one.
+verifier in an afternoon. It is not the thing you would run a fleet on. vLLM is, and so is
+SGLang; the gateway treats all three as first-class backends so that the same requests, the
+same tenants and the same metrics can be pointed at any of them.
 
 This directory is the vLLM side of that: the flags, a values file for the Helm chart, and a
-launcher for hosts where Kubernetes is not available.
+launcher for hosts where Kubernetes is not available. [`../sglang/`](../sglang/README.md) is
+its mirror image, engine for engine and flag for flag; a change made here usually has a
+counterpart there.
 
 | File | What it is |
 | --- | --- |
@@ -18,7 +20,7 @@ launcher for hosts where Kubernetes is not available.
 ## Two topologies
 
 **Kubernetes.** `engine.mode: vllm` renders a separate vLLM Deployment plus a ClusterIP
-Service, and the gateway is started with `--engine vllm --engine-url
+Service, and the gateway is started with `--engine
 http://<release>-engine:8000/v1`. The engine Service is deliberately cluster-internal: vLLM
 has no concept of a tenant, so anything that can reach it directly bypasses authentication,
 quotas and per-tenant accounting. The chart's NetworkPolicy makes that explicit by allowing
@@ -46,7 +48,7 @@ gateway runs next to it as an ordinary process:
 ```bash
 uv sync --extra vllm
 deploy/vllm/launch.sh &                                   # :8000, the OpenAI API
-turboserve gateway serve --engine vllm --engine-url http://127.0.0.1:8000/v1
+turboserve gateway serve --engine http://127.0.0.1:8000/v1 --model Qwen/Qwen2.5-7B-Instruct
 ```
 
 `scripts/vastai/` automates exactly this; see `docs/vastai.md`. On a machine that *does*

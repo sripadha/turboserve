@@ -6,7 +6,7 @@
 # Why a shell script exists next to a Helm chart: a vast.ai instance *is* a container, and
 # there is no nested Docker inside one, so the Kubernetes path cannot be used there. On
 # that host vLLM is pip-installed and started by this script, and the gateway is pointed at
-# it with `turboserve gateway serve --engine vllm --engine-url http://127.0.0.1:8000/v1`.
+# it with `turboserve gateway serve --engine http://127.0.0.1:8000/v1`.
 # The flags are the same ones deploy/helm/turboserve/templates/engine-deployment.yaml
 # renders, so a measurement taken on vast.ai is comparable with one taken in a cluster.
 #

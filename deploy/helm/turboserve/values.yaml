@@ -53,7 +53,7 @@ gateway:
 
   command: ["turboserve"]
   # Rendered by the `turboserve.gateway.args` helper:
-  #   gateway serve --engine <engine.mode> [--engine-url <engine service>] <extraArgs>
+  #   gateway serve --engine <config|mock|engine service URL> <flags> <extraArgs>
   # Override `args` to take full control of the command line.
   args: []
   extraArgs: []
@@ -183,7 +183,9 @@ engine:
   replicaCount: 1
   # An override for a mirror or a digest pin. Left empty, the image follows engine.mode:
   # engine.vllm.image or engine.sglang.image below. One value decides the engine, so a
-  # vLLM image can never be started with SGLang's argv.
+  # vLLM image can never be started with SGLang's argv. The two halves override
+  # independently -- an empty tag keeps the pinned tag of the mode's own image, because a
+  # mirror is usually the same version under a different host.
   image:
     repository: ""
     tag: ""

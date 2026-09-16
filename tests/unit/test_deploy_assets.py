@@ -365,6 +365,30 @@ def test_compose_offers_one_profile_per_production_engine() -> None:
         assert not compose["services"][name]["image"].endswith(":latest")
 
 
+def test_sglang_is_started_through_its_module_in_both_deployment_paths() -> None:
+    """`lmsysorg/sglang` has no server entrypoint of its own, `vllm/vllm-openai` does.
+
+    Both deployment paths therefore have to name `sglang.launch_server` explicitly, and
+    neither may name vLLM's: a manifest that passes SGLang's flags to the image's default
+    shell renders and validates cleanly and then crash-loops in the cluster, which is the
+    one SGLang mistake static validation cannot catch on its own.
+    """
+    compose = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    assert compose["services"]["sglang"]["entrypoint"] == [
+        "python3",
+        "-m",
+        "sglang.launch_server",
+    ]
+    assert "entrypoint" not in compose["services"]["vllm"]
+
+    template = (CHART / "templates" / "engine-deployment.yaml").read_text(encoding="utf-8")
+    command = 'command: ["python3", "-m", "sglang.launch_server"]'
+    assert command in template
+    # Guarded by the mode, so the vLLM image keeps the entrypoint it ships with.
+    guard = template.index('{{- if eq .Values.engine.mode "sglang" }}')
+    assert guard < template.index(command) < template.index("args:")
+
+
 def test_compose_mounts_the_same_rules_file_the_chart_embeds() -> None:
     """Two deployment paths, one alert definition."""
     compose = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
