@@ -10,14 +10,14 @@
 # Build:  make docker-build            (docker build -f Dockerfile.gateway -t turboserve-gateway:dev .)
 # Run:    docker run --rm turboserve-gateway:dev            # default CMD: hwinfo
 #
-# The default CMD is `hwinfo` because that is a command the CLI actually has: `cli.py`
-# registers `version` and `hwinfo` only. The gateway's own `serve` sub-application is
-# mounted by the `gateway/` owner; until it lands, `turboserve serve` exits 2, so it must
-# not be this image's default. Once `serve` is registered the server is started with
+# The default CMD is `hwinfo`, not `serve`, on purpose: it prints the record every result
+# file embeds and then exits, so CI can smoke-run the image and see it succeed. A server as
+# the default would have to be killed by a timeout, and a broken entrypoint would be
+# indistinguishable from a healthy one. Start the gateway by naming the command:
 #
 #     docker run --rm -p 8000:8000 turboserve-gateway:dev serve --engine mock
 #
-# and the CMD at the bottom of this file changes to that argument list.
+# which is exactly what docker-compose.yml and the Helm chart do (`gateway serve ...`).
 
 FROM python:3.12-slim-bookworm AS builder
 

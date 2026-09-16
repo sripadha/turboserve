@@ -58,3 +58,75 @@ def test_hwinfo_indent_zero_is_one_line() -> None:
     payload = result.output.strip()
     assert "\n" not in payload
     assert json.loads(payload)["schema_version"] >= 1
+
+
+# -- sub-application wiring --------------------------------------------------------------
+#
+# `cli.py` is the only place the module groups' typer apps are mounted, and nothing else
+# imports them together. Without these tests a module could stop exporting its app, or be
+# renamed, and the failure would surface as a missing command in a deployment manifest.
+
+#: Every command the specification's CLI section names, and the ones the manifests call.
+EXPECTED_COMMANDS: tuple[str, ...] = (
+    "version",
+    "hwinfo",
+    "serve",
+    "gateway",
+    "engine",
+    "bench",
+    "results",
+    "canary",
+    "chaos",
+    "lora",
+)
+
+#: `<group>: <subcommands>` that other parts of the repository invoke by name --
+#: docker-compose.yml, the Helm chart, deploy/kind/e2e.sh, scripts/run_all_benchmarks.sh
+#: and the runbook.
+EXPECTED_SUBCOMMANDS: dict[str, tuple[str, ...]] = {
+    "gateway": ("serve", "hash-key", "config-check"),
+    "engine": ("generate", "kv-size"),
+    "bench": (
+        "loadgen",
+        "naive-vs-cb",
+        "prefix-cache",
+        "spec-decode",
+        "multi-lora",
+        "chaos",
+        "render",
+        "profiles",
+    ),
+    "results": ("render", "show"),
+    "canary": ("plan", "run", "abort"),
+    "chaos": ("run", "plan"),
+    "lora": ("make-adapters",),
+}
+
+
+def test_every_module_app_is_mounted() -> None:
+    result = runner.invoke(app, ["--help"])
+    assert result.exit_code == 0, result.output
+    for command in EXPECTED_COMMANDS:
+        assert command in result.output, f"{command} is not on the root app"
+
+
+def test_each_group_lists_the_commands_the_repository_calls() -> None:
+    for group, subcommands in EXPECTED_SUBCOMMANDS.items():
+        result = runner.invoke(app, [group, "--help"])
+        assert result.exit_code == 0, f"{group} --help failed: {result.output}"
+        for sub in subcommands:
+            assert sub in result.output, f"{group} has no {sub} command"
+
+
+def test_serve_is_the_gateways_serve_command() -> None:
+    """``turboserve serve`` must be the same flags as ``turboserve gateway serve``.
+
+    They are deliberately the same function object; a second implementation would drift.
+    """
+    top = runner.invoke(app, ["serve", "--help"])
+    nested = runner.invoke(app, ["gateway", "serve", "--help"])
+    assert top.exit_code == 0, top.output
+    assert nested.exit_code == 0, nested.output
+    for flag in ("--engine", "--model", "--tenants", "--models", "--host", "--port"):
+        assert flag in top.output, f"turboserve serve has no {flag}"
+        assert flag in nested.output

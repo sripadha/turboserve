@@ -75,7 +75,7 @@ jobs:
       - name: mypy
         run: uv run mypy src
 
-      - name: pytest (unit, CPU)
+      - name: pytest (CPU)
         run: uv run pytest -q
 
       - name: Restore the committed pyproject.toml
@@ -118,3 +118,116 @@ jobs:
         run: |
           docker run --rm --entrypoint python turboserve-gateway:ci \
             -c "import turboserve, pathlib; p = pathlib.Path(turboserve.__file__); print(p); assert p.is_relative_to('/opt/turboserve'), p"
+
+  # Static validation of everything under deploy/ and scripts/. It is deliberately separate
+  # from the `check` job: none of it needs the Python environment, and keeping it apart
+  # means a broken manifest is reported as a broken manifest rather than as a failed test
+  # run. Nothing here talks to a cluster -- the end-to-end run against a real API server is
+  # .github/workflows/kind-e2e.yml.
+  k8s:
+    name: helm lint + kubeconform + kustomize
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.31.4
+
+      - name: Install kubeconform
+        env:
+          KUBECONFORM_VERSION: "0.6.7"
+        run: |
+          curl -fsSL -o /tmp/kubeconform.tar.gz \
+            "https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          tar -xzf /tmp/kubeconform.tar.gz -C /tmp kubeconform
+          sudo install -m 0755 /tmp/kubeconform /usr/local/bin/kubeconform
+          kubeconform -v
+
+      # `make k8s-lint` is the same command a developer runs locally, so the manifests
+      # cannot pass here and fail there. It does: helm lint; three `helm template |
+      # kubeconform` renders (defaults, the production vLLM + canary + monitoring shape, and
+      # the Argo Rollouts variant -- most of the chart is conditional, and a template that is
+      # never rendered is never validated); both kustomize overlays; the Chaos Mesh
+      # manifests; and a shell-syntax pass over every script under deploy/ and scripts/.
+      #
+      # -ignore-missing-schemas is required and is scoped to what it says: ServiceMonitor,
+      # PrometheusRule and Rollout are custom resources whose schemas are not part of
+      # Kubernetes, so kubeconform reports them as skipped. Every built-in object is still
+      # validated with -strict, which rejects unknown fields.
+      - name: make k8s-lint
+        run: make k8s-lint
+
+      # The chart's guard rails are part of its contract; a values combination that cannot
+      # work must fail at render time, not in the cluster.
+      - name: chart rejects invalid values
+        run: |
+          set +e
+          helm template turboserve deploy/helm/turboserve --set engine.mode=nonsense >/dev/null 2>&1
+          test $? -ne 0 || { echo "engine.mode=nonsense should have failed"; exit 1; }
+          helm template turboserve deploy/helm/turboserve \
+            --set canary.enabled=true --set canary.argoRollouts.enabled=true >/dev/null 2>&1
+          test $? -ne 0 || { echo "canary.enabled + argoRollouts.enabled should have failed"; exit 1; }
+          echo "both invalid combinations were rejected"
+
+      - name: Parse every YAML asset
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          import sys
+
+          import yaml
+
+          paths = [
+              *pathlib.Path(".github/workflows").glob("*.yml"),
+              pathlib.Path("docker-compose.yml"),
+              pathlib.Path("deploy/prometheus/rules.yaml"),
+              pathlib.Path("deploy/prometheus/prometheus.yml"),
+              pathlib.Path("deploy/kind/kind-config.yaml"),
+              *pathlib.Path("deploy/grafana/provisioning").rglob("*.yaml"),
+          ]
+          failed = False
+          for path in paths:
+              try:
+                  list(yaml.safe_load_all(path.read_text()))
+              except yaml.YAMLError as exc:
+                  print(f"FAIL {path}: {exc}")
+                  failed = True
+              else:
+                  print(f"ok   {path}")
+          sys.exit(1 if failed else 0)
+          PY
+
+      - name: The Grafana dashboard is valid JSON with panels
+        run: |
+          python3 - <<'PY'
+          import json
+          import pathlib
+
+          dashboard = json.loads(
+              pathlib.Path("deploy/grafana/dashboards/turboserve.json").read_text()
+          )
+          panels = [panel for panel in dashboard["panels"] if panel["type"] != "row"]
+          assert dashboard["uid"] == "turboserve-gateway", dashboard["uid"]
+          assert panels, "the dashboard has no panels"
+          for panel in panels:
+              assert panel.get("targets"), f"panel {panel['title']!r} has no query"
+          print(f"{len(panels)} panels, all with queries")
+          PY
+
+      - name: The error-rate assertion script works
+        run: |
+          echo '{"scenario":"selftest","summary":{"num_requests":1000,"num_failed":1}}' \
+            | python3 deploy/kind/assert_error_rate.py - --min-requests 100
+          if echo '{"scenario":"selftest","summary":{"num_requests":1000,"num_failed":50}}' \
+            | python3 deploy/kind/assert_error_rate.py - --min-requests 100; then
+            echo "a 5% error rate should have failed the assertion"
+            exit 1
+          fi
