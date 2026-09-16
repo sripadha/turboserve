@@ -51,6 +51,11 @@ then edits and re-syncs).
 | `make test` | the default suite: CPU unit tests, `slow` and `gpu` deselected |
 | `make test-slow` | tests marked `slow` (real models; minutes) |
 | `make test-gpu` | tests marked `gpu` (need CUDA; run one process at a time) |
+| `make bench` | every benchmark scenario on this host, then renders the pages (`PROFILE=h100\|dev-2060`) |
+| `make bench-one` | one scenario (`SCENARIO=naive-vs-cb`, ...) |
+| `make bench-h100` | rents a vast.ai H100, runs the suite there, pulls `results/` back |
+| `make results` | regenerates `results/README.md`, `docs/results.md` and the plots from `results/*.json` |
+| `make k8s-lint` | `helm lint`, three `helm template \| kubeconform` renders, the kustomize overlays, shell syntax |
 | `make docker-build` | builds the gateway image (`docker build -f Dockerfile.gateway`); needs Docker |
 
 `make lint typecheck test` must be green before you push. The same three run in CI, in the
@@ -59,30 +64,34 @@ then edits and re-syncs).
 `make docker-build` is the only target that does not run inside the repo-local `.venv`, and
 the only one that cannot run on a WSL checkout without Docker Desktop integration. CI is
 therefore where the gateway image is actually built: see
-[Deliverables not built yet](#deliverables-not-built-yet) for the engine image, which is
+[What has never been executed here](#what-has-never-been-executed-here) for the engine image, which is
 built on the GPU host instead.
 
-### Targets that do not exist yet
+### Commands the CLI exposes
 
-`make` deliberately has no `bench`, `results` or `k8s-lint` target. They are named in the
-spec's Makefile list, and they arrive with the code that makes them real rather than as
-stubs that exit 0 on nothing:
+`turboserve --help` lists the real surface; each sub-application lives in the module that
+owns it and is mounted on the root app by `src/turboserve/cli.py`:
 
-| Target | Lands with | Will wrap |
-| --- | --- | --- |
-| `bench` | `bench/` (load generator, scenarios) | `turboserve bench <scenario>` over `configs/bench/` |
-| `results` | `bench/report.py` | regenerating `docs/results.md`, `results/README.md` and the plots from `results/*.json` |
-| `k8s-lint` | the Helm chart under `deploy/helm/turboserve/` | `helm lint` and `helm template ... \| kubeconform -strict -summary` |
+| Command | Owner module |
+| --- | --- |
+| `turboserve serve`, `turboserve gateway ...` | `gateway/app.py` |
+| `turboserve engine generate\|kv-size` | `engine/runtime/engine.py` |
+| `turboserve bench ...` | `bench/cli.py`, which registers each scenario module |
+| `turboserve results render\|show` | `bench/report.py` |
+| `turboserve canary plan\|run\|abort` | `canary/k8s.py` |
+| `turboserve chaos run\|plan` | `chaos/harness.py` |
+| `turboserve lora make-adapters` | `engine/lora/make_adapters.py` |
+| `turboserve version`, `turboserve hwinfo` | `cli.py` itself |
 
-`bench-h100`, which chains `scripts/vastai/` around `bench`, is tracked in
-[Deliverables not built yet](#deliverables-not-built-yet) together with the CI job that will
-run `k8s-lint`.
+A module owner adds a command by exporting a `typer.Typer` from their own package; the
+integrator mounts it. `bench/cli.py` goes one step further and discovers the optional
+scenario modules (`spec-decode`, `multi-lora`) by name, so a build without them still has a
+working `bench loadgen`.
 
-The same applies to the CLI: `cli.py` registers `version` and `hwinfo` and nothing else.
-Module owners write their commands as a `typer.Typer` sub-application inside their own
-package and the integrator mounts it on the root app. That is why `Dockerfile.gateway`
-defaults to `CMD ["hwinfo"]` rather than to the spec's `serve --engine mock`:
-`turboserve serve` exits 2 until `gateway/` mounts its sub-application.
+`Dockerfile.gateway` still defaults to `CMD ["hwinfo"]` rather than to `serve`: `hwinfo`
+prints the record every result file embeds and then exits, so CI can smoke-run the image and
+see it succeed, while a server as the default would have to be killed by a timeout. The
+chart and `docker-compose.yml` both name the command explicitly.
 
 ## Test markers and fixtures
 
@@ -98,6 +107,14 @@ Three tiers, declared in `pyproject.toml` and registered in `tests/conftest.py`:
   or otherwise takes minutes. Deselected by default.
 - **`@pytest.mark.gpu`** — needs CUDA. Deselected by default, and skipped automatically by an
   autouse guard in `conftest.py` when `torch.cuda.is_available()` is false.
+
+Directories, which are about *scope* rather than about cost: `tests/unit/` tests one module
+against fakes, `tests/integration/` runs a request through several real ones at once (the
+gateway to the reference engine over HTTP, on the tiny checkpoint), and `tests/gpu/` holds
+the CUDA-only kernels. `tests/integration/` is part of the default suite because it is
+seconds, not minutes; a test that needs a real checkpoint belongs in `slow` wherever it
+lives. `tests/` has no `__init__.py`, so **test file basenames must be unique across all
+three directories**.
 
 Other conventions: deterministic seeds (`torch.Generator().manual_seed(...)`), `tmp_path`
 for anything written to disk, and the `device` fixture instead of hard-coding `"cuda"`
@@ -131,28 +148,23 @@ Each top-level package under `src/turboserve/` has one owner at a time:
 | `bench/` | load generator, metrics, scenarios, reports, `scripts/vastai/` and the `make bench-h100` target |
 | `deploy/` | Helm chart, kustomize overlays, kind e2e, `docker-compose.yml`, the `.github/workflows/kind-e2e.yml` workflow and the `helm lint` + `kubeconform` CI job |
 
-### Deliverables not built yet
+### What has never been executed here
 
-These are in the spec (`specs/turboserve.md` §1, §7) and in the acceptance criteria, but are
-deliberately absent from the scaffold because they would have nothing to act on: the Helm
-chart under `deploy/helm/turboserve/templates/` and the Prometheus/Grafana assets under
-`deploy/prometheus/` and `deploy/grafana/dashboards/` are still empty, and so is `bench/`.
-The first three belong to the `deploy/` owner and land with the chart; `scripts/vastai/`
-belongs to the `bench/` owner and is the single command the whole results policy rests on.
-The last row is not blocked on a missing module — it is blocked on hardware, and it is here
-so that no Dockerfile in this repo stays unverified without being written down:
+Everything in the spec is now in the repository. Three things in it have never been *run* on
+this machine, and each is written down on the page that claims it rather than left to be
+discovered:
 
-| Missing | Why it is blocked | Lands with |
+| Not executed here | Why | Where it does run |
 | --- | --- | --- |
-| `docker-compose.yml` | would bind-mount `deploy/prometheus/*` and `deploy/grafana/dashboards/*`, which are `.gitkeep` only | the Prometheus/Grafana assets |
-| `.github/workflows/kind-e2e.yml` | needs a deployable chart and the gateway image's `serve` command | the Helm chart |
-| `helm lint` + `helm template \| kubeconform` job in `ci.yml` | `helm lint` fails on a chart with no `Chart.yaml` | the Helm chart |
-| `scripts/vastai/{provision,sync,run_remote,pull_results,destroy}.sh` and the `make bench-h100` target that chains them | they provision a vast.ai H100, sync the repo, run `make bench PROFILE=h100` there and pull `results/` back — there is no bench scenario to run yet | the `bench/` scenarios and `bench/report.py` (PLAN.md §2, `specs/turboserve.md` §7) |
-| a build of `Dockerfile.engine` anywhere | it layers the CUDA 12.4 torch resolution on `nvidia/cuda:12.4.1-runtime`, which does not fit in a hosted GitHub runner's free disk, and Docker is unavailable on the WSL dev machine | the first GPU-host run, which builds it with `docker build -f Dockerfile.engine -t turboserve-engine:dev .` |
+| A build of `Dockerfile.engine` | It layers the CUDA 12.4 torch resolution on `nvidia/cuda:12.4.1-runtime`, which does not fit in a hosted GitHub runner's free disk, and Docker is unavailable on the WSL dev machine | the GPU host: `docker build -f Dockerfile.engine -t turboserve-engine:dev .` |
+| Anything against a real Kubernetes cluster — the chart, the kustomize overlays, `kubectl argo rollouts`, the Prometheus queries | No Docker under WSL, so no kind cluster locally. They are validated statically by `make k8s-lint` and driven against fakes in the unit tests | `.github/workflows/kind-e2e.yml`, which creates a kind cluster, installs the chart and runs the chaos/loadgen job |
+| `scripts/vastai/*` against the vast.ai API | Running them rents a GPU. They are shell-syntax checked in `make k8s-lint` and their embedded Python helpers are exercised against recorded response shapes | the measurement session: `make bench-h100` |
 
 `Dockerfile.gateway` is not in that table: CI's `docker` job builds it on every push and
-starts the resulting image, so the gateway build is verified. `Dockerfile.engine` is the one
-image in this repo that has never been built.
+starts the resulting image, so the gateway build is verified.
+
+No benchmark has been run on this machine either, and none may be: see PLAN.md §2a. The
+measurement target is one H100 80GB rented on vast.ai, and `results/` is empty until it runs.
 
 Work only inside your directory, plus your own tests under `tests/` and your own page under
 `docs/`. Shared files — `pyproject.toml`, `uv.lock`, `Makefile`, `README.md`, CI workflows,

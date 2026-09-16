@@ -9,6 +9,66 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+#### Engine
+
+- `engine/core`: `Sequence` and its lifecycle, a ref-counted `BlockAllocator` with a
+  `BlockRecycler` hook, the paged `KVCache`, a content-addressed `PrefixCache`, the
+  `BlockManager` that joins them, the continuous-batching `Scheduler` (chunked prefill,
+  recompute preemption, FCFS and tenant-fair policies) and a vectorised `Sampler`.
+- `engine/model`: Qwen2 and Llama from scratch with paged attention — `ModelConfig.from_hf`,
+  safetensors loading (sharded indices included), `RMSNorm`/rotary/GQA attention/SwiGLU MLP,
+  a reference SDPA paged-attention path and a Triton decode kernel, and a `LinearBase` hook
+  that lets the LoRA module swap every projection.
+- `engine/runtime`: `ModelRunner` (SchedulerOutput to packed tensors to fp32 logits),
+  `LLMEngine` and `AsyncLLMEngine`, KV-pool sizing from a memory probe, incremental
+  detokenisation with stop-string handling, and the `NaiveHFEngine`/`StaticBatchHFEngine`
+  baselines behind the same interface.
+- `engine/spec`: model and n-gram drafters, greedy and rejection-sampling verification, and
+  `SpeculativeLLMEngine` with acceptance-rate accounting and KV rollback.
+- `engine/lora`: PEFT adapter loading, a GPU slot registry with LRU residency and VRAM
+  accounting, grouped (SGMV-style) `LoRALinear` with a Triton BGMV decode kernel, and
+  `turboserve lora make-adapters`, which trains N adapters on N distinct synthetic tasks.
+
+#### Gateway, delivery and measurement
+
+- `gateway/`: the OpenAI-compatible FastAPI app (streaming and buffered completions and chat
+  completions, models, health, readiness, metrics), sha256 key authentication, per-tenant
+  token-bucket quotas and a concurrency gate, a lane-aware weighted router with health
+  caching and retry-before-first-byte, chat templating, usage and cost attribution, and the
+  `local`, `openai` and `mock` backends behind one `Backend` protocol.
+- `canary/`: a pure, clock-injectable SLO gate (`IDLE → CANARY(step) → PROMOTED |
+  ROLLED_BACK`), a Prometheus lane source, Argo Rollouts and weighted-Service `kubectl`
+  drivers, and `turboserve canary plan|run|abort`.
+- `chaos/`: the fault-schedule grammar, breakable replicas (in-process and as real HTTP
+  subprocesses that can be `SIGKILL`ed), and a harness that drives open-loop load through the
+  real router and writes an ordinary result file.
+- `bench/`: workload profiles, seeded synthetic prompts, open- and closed-loop load
+  generation, per-request records with one shared percentile definition, the five scenarios,
+  plots, and a renderer that regenerates `results/README.md` and `docs/results.md`.
+- `deploy/`: a Helm chart (gateway lanes, engine modes `mock|reference|vllm`, HPA, PDB,
+  NetworkPolicy, Ingress, ServiceMonitor, PrometheusRule, Grafana dashboard, Argo Rollouts
+  variant, adapter-sync init container), kustomize base and overlays, a kind end-to-end
+  script that deletes pods under load and asserts an error-rate bound, Prometheus rules,
+  a Grafana dashboard, `docker-compose.yml` and `scripts/vastai/`.
+
+#### Integration
+
+- `cli.py` mounts every module's typer application: `serve`, `gateway`, `engine`, `bench`,
+  `results`, `canary`, `chaos`, `lora`, alongside `version` and `hwinfo`.
+- Makefile: `bench`, `bench-one`, `bench-h100`, `results` and `k8s-lint`. `bench-h100`
+  chains the vast.ai scripts into the one command the results policy rests on; `k8s-lint`
+  runs `helm lint`, three `helm template | kubeconform` renders, the kustomize overlays and a
+  shell-syntax pass.
+- `turboserve canary abort`: the break-glass path that takes traffic off the canary lane
+  through the configured driver without waiting for a gate.
+- `tests/integration/test_gateway_engine_e2e.py`: an OpenAI request travelling the whole way
+  down — auth, quota, router, `LocalEngineBackend`, `AsyncLLMEngine`, scheduler, paged
+  attention, sampler, detokeniser — and back as an SSE stream, on the cached tiny checkpoint.
+- `docs/architecture.md` (six mermaid diagrams), `docs/runbook.md`, `docs/adr/` (six ADRs),
+  a generated `docs/results.md`, and a rewritten `docs/index.md` and `README.md`.
+
+#### Scaffold
+
 - Repository scaffold: `uv`-managed packaging (`pyproject.toml`, `uv.lock`, `.python-version`),
   `src/` layout with one package per module group, Apache-2.0 license, contributing guide and
   documentation index.
@@ -31,19 +91,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   had a verification path anywhere in the project.
 - `make docker-build` (`IMAGE=` overridable), so the image build a developer runs and the one
   CI runs are the same command.
-- CONTRIBUTING: a "Targets that do not exist yet" table for `bench`, `results` and `k8s-lint`,
-  which the Makefile header already pointed at but which did not exist, and a row in
-  "Deliverables not built yet" for `Dockerfile.engine`, the one image here that has never been
-  built (its CUDA layers do not fit a hosted runner's disk; it is built on the GPU host).
 - README: a mermaid architecture diagram of the request path — client through the gateway's
   auth, quota and routing stages to a backend and, for the local backend, into the engine's
   scheduler/runner/sampler step loop — with the metrics, canary and chaos edges drawn as
   control flow. PLAN.md §4 requires it and `docs/index.md` already promised mermaid diagrams.
-- `scripts/vastai/` and the `make bench-h100` target are tracked explicitly: a row in
-  "Deliverables not built yet" naming the `bench/` module they land with, the `bench/` owner's
-  scope in the module table, a `vastai/` line in the README layout tree and a note in
-  `docs/index.md`. They were previously implied only by `scripts/ [planned]`, although the
-  whole results policy depends on that one command.
+
+### Changed
+
+- The LoRA adapter trainer moved from `scripts/make_lora_adapters.py` into the package as
+  `turboserve.engine.lora.make_adapters`, so it is importable, type-checked and exposed as
+  `turboserve lora make-adapters`. `scripts/make_lora_adapters.py` remains as a one-line
+  wrapper for running it out of a clone.
+- `docs/canary.md` and `docs/chaos.md` merged into `docs/canary-and-chaos.md`, the page the
+  documentation index has always named.
+- `Dockerfile.gateway` keeps `CMD ["hwinfo"]` now that `serve` exists, because a default that
+  exits is what lets CI smoke-run the image; the chart and compose file name the command.
 
 ### Fixed
 
