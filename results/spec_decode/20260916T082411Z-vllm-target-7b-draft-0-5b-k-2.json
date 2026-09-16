@@ -6,7 +6,7 @@
   "provenance_note": "Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs.",
   "started_at": "2026-09-16T08:24:11.975236+00:00",
   "finished_at": "2026-09-16T08:26:50.834303+00:00",
-  "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+  "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
   "gpu_price_per_hour": 2.49,
   "price_source": "vast.ai on-demand H100 SXM offer price at authoring time (assumed; re-read at run time by make bench-h100)",
   "config": {
@@ -151,7 +151,7 @@
     },
     "triton_version": "3.2.0",
     "git": {
-      "sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+      "sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
       "branch": "main",
       "dirty": false
     },

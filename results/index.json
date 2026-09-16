@@ -7,7 +7,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T04:00:00+00:00",
     "finished_at": "2026-09-16T04:35:42.043478+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -19,7 +19,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T04:37:12.043478+00:00",
     "finished_at": "2026-09-16T04:41:01.140742+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -31,7 +31,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T04:42:31.140742+00:00",
     "finished_at": "2026-09-16T04:44:03.935502+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -43,7 +43,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T04:45:33.935502+00:00",
     "finished_at": "2026-09-16T04:46:31.615755+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -55,7 +55,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T04:48:01.615755+00:00",
     "finished_at": "2026-09-16T04:48:57.269098+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -67,7 +67,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T04:50:27.269098+00:00",
     "finished_at": "2026-09-16T04:51:19.305167+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -79,7 +79,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T04:52:49.305167+00:00",
     "finished_at": "2026-09-16T04:53:39.532034+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -91,7 +91,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T04:55:09.532034+00:00",
     "finished_at": "2026-09-16T05:30:51.575512+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -103,7 +103,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T05:32:21.575512+00:00",
     "finished_at": "2026-09-16T05:34:47.546831+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -115,7 +115,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T05:36:17.546831+00:00",
     "finished_at": "2026-09-16T05:37:08.087284+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -127,7 +127,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T05:38:38.087284+00:00",
     "finished_at": "2026-09-16T05:39:10.416040+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -139,7 +139,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T05:40:40.416040+00:00",
     "finished_at": "2026-09-16T05:41:11.437945+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -151,7 +151,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T05:42:41.437945+00:00",
     "finished_at": "2026-09-16T05:43:08.475035+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -163,7 +163,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T05:44:38.475035+00:00",
     "finished_at": "2026-09-16T05:45:04.462742+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -175,7 +175,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T05:46:34.462742+00:00",
     "finished_at": "2026-09-16T06:22:16.506220+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -187,7 +187,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T06:23:46.506220+00:00",
     "finished_at": "2026-09-16T06:25:30.469978+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -199,7 +199,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T06:27:00.469978+00:00",
     "finished_at": "2026-09-16T06:27:42.707229+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -211,7 +211,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T06:29:12.707229+00:00",
     "finished_at": "2026-09-16T06:29:40.049861+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -223,7 +223,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T06:31:10.049861+00:00",
     "finished_at": "2026-09-16T06:31:35.930739+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -235,7 +235,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T06:33:05.930739+00:00",
     "finished_at": "2026-09-16T06:33:28.117614+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -247,7 +247,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T06:34:58.117614+00:00",
     "finished_at": "2026-09-16T06:35:19.180021+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -259,7 +259,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T06:36:49.180021+00:00",
     "finished_at": "2026-09-16T06:37:11.727885+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -271,7 +271,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T06:38:41.727885+00:00",
     "finished_at": "2026-09-16T06:39:03.369867+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -283,7 +283,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T06:40:33.369867+00:00",
     "finished_at": "2026-09-16T06:40:49.052681+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -295,7 +295,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T06:42:19.052681+00:00",
     "finished_at": "2026-09-16T06:42:34.170408+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -307,7 +307,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T06:44:04.170408+00:00",
     "finished_at": "2026-09-16T06:44:19.441922+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -319,7 +319,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T06:45:49.441922+00:00",
     "finished_at": "2026-09-16T06:46:04.166642+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -331,7 +331,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T06:47:34.166642+00:00",
     "finished_at": "2026-09-16T06:51:58.146012+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -343,7 +343,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T06:53:28.146012+00:00",
     "finished_at": "2026-09-16T06:56:31.749382+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -355,7 +355,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T06:58:01.749382+00:00",
     "finished_at": "2026-09-16T07:00:39.086095+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -367,7 +367,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T07:02:09.086095+00:00",
     "finished_at": "2026-09-16T07:04:55.944470+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -379,7 +379,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T07:06:25.944470+00:00",
     "finished_at": "2026-09-16T07:09:06.330296+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -391,7 +391,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T07:10:36.330296+00:00",
     "finished_at": "2026-09-16T07:12:30.179701+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -403,7 +403,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T07:14:00.179701+00:00",
     "finished_at": "2026-09-16T07:15:34.376097+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -415,7 +415,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T07:17:04.376097+00:00",
     "finished_at": "2026-09-16T07:18:45.766365+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -427,7 +427,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T07:20:15.766365+00:00",
     "finished_at": "2026-09-16T07:21:42.803859+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -439,7 +439,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T07:23:12.803859+00:00",
     "finished_at": "2026-09-16T07:24:20.195558+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -451,7 +451,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T07:25:50.195558+00:00",
     "finished_at": "2026-09-16T07:26:50.265951+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -463,7 +463,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T07:28:20.265951+00:00",
     "finished_at": "2026-09-16T07:29:23.045959+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -475,7 +475,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T07:30:53.045959+00:00",
     "finished_at": "2026-09-16T07:31:47.272793+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -487,7 +487,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T07:33:17.272793+00:00",
     "finished_at": "2026-09-16T07:34:00.168823+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -499,7 +499,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T07:35:30.168823+00:00",
     "finished_at": "2026-09-16T07:36:07.571895+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -511,7 +511,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T07:37:37.571895+00:00",
     "finished_at": "2026-09-16T07:38:17.043081+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -523,7 +523,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T07:39:47.043081+00:00",
     "finished_at": "2026-09-16T07:40:23.188975+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -535,7 +535,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T07:41:53.188975+00:00",
     "finished_at": "2026-09-16T07:42:25.097175+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -547,7 +547,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T07:43:55.097175+00:00",
     "finished_at": "2026-09-16T07:44:25.114453+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -559,7 +559,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T07:45:55.114453+00:00",
     "finished_at": "2026-09-16T07:46:25.855281+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -571,7 +571,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T07:47:55.855281+00:00",
     "finished_at": "2026-09-16T07:48:19.544110+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -583,7 +583,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T07:49:49.544110+00:00",
     "finished_at": "2026-09-16T07:50:10.800935+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -595,7 +595,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T07:51:40.800935+00:00",
     "finished_at": "2026-09-16T07:52:00.637736+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -607,7 +607,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T07:53:30.637736+00:00",
     "finished_at": "2026-09-16T07:53:51.030167+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -619,7 +619,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T07:55:21.030167+00:00",
     "finished_at": "2026-09-16T08:01:07.736744+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -631,7 +631,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T08:02:37.736744+00:00",
     "finished_at": "2026-09-16T08:06:55.848732+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -643,7 +643,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T08:08:25.848732+00:00",
     "finished_at": "2026-09-16T08:12:11.299133+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -655,7 +655,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T08:13:41.299133+00:00",
     "finished_at": "2026-09-16T08:17:41.954065+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -667,7 +667,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T08:19:11.954065+00:00",
     "finished_at": "2026-09-16T08:22:41.975236+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -679,7 +679,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T08:24:11.975236+00:00",
     "finished_at": "2026-09-16T08:26:50.834303+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -691,7 +691,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T08:28:20.834303+00:00",
     "finished_at": "2026-09-16T08:30:35.344249+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -703,7 +703,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T08:32:05.344249+00:00",
     "finished_at": "2026-09-16T08:34:30.862212+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -715,7 +715,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T08:36:00.862212+00:00",
     "finished_at": "2026-09-16T08:37:52.871737+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -727,7 +727,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T08:39:22.871737+00:00",
     "finished_at": "2026-09-16T08:40:53.830151+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -739,7 +739,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T08:42:23.830151+00:00",
     "finished_at": "2026-09-16T08:43:46.109176+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -751,7 +751,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T08:45:16.109176+00:00",
     "finished_at": "2026-09-16T08:46:42.499151+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -763,7 +763,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T08:48:12.499151+00:00",
     "finished_at": "2026-09-16T08:49:21.715380+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -775,7 +775,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T08:50:51.715380+00:00",
     "finished_at": "2026-09-16T08:51:48.814016+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -787,7 +787,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T08:53:18.814016+00:00",
     "finished_at": "2026-09-16T08:54:09.420759+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -799,7 +799,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T08:55:39.420759+00:00",
     "finished_at": "2026-09-16T08:56:33.029277+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -811,7 +811,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T08:58:03.029277+00:00",
     "finished_at": "2026-09-16T08:58:49.038310+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -823,7 +823,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T09:00:19.038310+00:00",
     "finished_at": "2026-09-16T09:01:00.572455+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -835,7 +835,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T09:02:30.572455+00:00",
     "finished_at": "2026-09-16T09:03:09.964257+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -847,7 +847,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T09:04:39.964257+00:00",
     "finished_at": "2026-09-16T09:05:20.395104+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -859,7 +859,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T09:06:50.395104+00:00",
     "finished_at": "2026-09-16T09:07:20.002644+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -871,7 +871,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T09:08:50.002644+00:00",
     "finished_at": "2026-09-16T09:09:17.045590+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -883,7 +883,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T09:10:47.045590+00:00",
     "finished_at": "2026-09-16T09:11:12.484152+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -895,7 +895,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T09:12:42.484152+00:00",
     "finished_at": "2026-09-16T09:13:08.686648+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -907,7 +907,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T09:14:38.686648+00:00",
     "finished_at": "2026-09-16T09:20:25.393225+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -919,7 +919,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T09:21:55.393225+00:00",
     "finished_at": "2026-09-16T09:26:47.539144+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -931,7 +931,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T09:28:17.539144+00:00",
     "finished_at": "2026-09-16T09:33:02.623719+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -943,7 +943,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T09:34:32.623719+00:00",
     "finished_at": "2026-09-16T09:39:32.196224+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -955,7 +955,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T09:41:02.196224+00:00",
     "finished_at": "2026-09-16T09:44:32.217395+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -967,7 +967,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T09:46:02.217395+00:00",
     "finished_at": "2026-09-16T09:49:00.888732+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -979,7 +979,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T09:50:30.888732+00:00",
     "finished_at": "2026-09-16T09:53:22.137829+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -991,7 +991,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T09:54:52.137829+00:00",
     "finished_at": "2026-09-16T09:57:53.392317+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -1003,7 +1003,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T09:59:23.392317+00:00",
     "finished_at": "2026-09-16T10:01:15.401842+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -1015,7 +1015,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:02:45.401842+00:00",
     "finished_at": "2026-09-16T10:04:24.853960+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -1027,7 +1027,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:05:54.853960+00:00",
     "finished_at": "2026-09-16T10:07:32.587924+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -1039,7 +1039,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:09:02.587924+00:00",
     "finished_at": "2026-09-16T10:10:43.823089+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -1051,7 +1051,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:12:13.823089+00:00",
     "finished_at": "2026-09-16T10:13:23.039318+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -1063,7 +1063,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:14:53.039318+00:00",
     "finished_at": "2026-09-16T10:15:55.056580+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -1075,7 +1075,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:17:25.056580+00:00",
     "finished_at": "2026-09-16T10:18:25.266028+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -1087,7 +1087,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:19:55.266028+00:00",
     "finished_at": "2026-09-16T10:20:57.902522+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -1099,7 +1099,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:22:27.902522+00:00",
     "finished_at": "2026-09-16T10:23:13.911555+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -1111,7 +1111,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:24:43.911555+00:00",
     "finished_at": "2026-09-16T10:25:27.363804+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -1123,7 +1123,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:26:57.363804+00:00",
     "finished_at": "2026-09-16T10:27:40.441214+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -1135,7 +1135,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:29:10.441214+00:00",
     "finished_at": "2026-09-16T10:29:54.275757+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -1147,7 +1147,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:31:24.275757+00:00",
     "finished_at": "2026-09-16T10:31:53.883297+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -1159,7 +1159,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:33:23.883297+00:00",
     "finished_at": "2026-09-16T10:33:52.028716+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -1171,7 +1171,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:35:22.028716+00:00",
     "finished_at": "2026-09-16T10:35:49.779542+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -1183,7 +1183,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:37:19.779542+00:00",
     "finished_at": "2026-09-16T10:37:48.057497+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 128
   },
@@ -1195,7 +1195,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:39:18.057497+00:00",
     "finished_at": "2026-09-16T10:39:47.323985+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -1207,7 +1207,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:41:17.323985+00:00",
     "finished_at": "2026-09-16T10:41:47.706794+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -1219,7 +1219,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:43:17.706794+00:00",
     "finished_at": "2026-09-16T10:43:48.332289+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -1231,7 +1231,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:45:18.332289+00:00",
     "finished_at": "2026-09-16T10:45:49.346059+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -1243,7 +1243,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:47:19.346059+00:00",
     "finished_at": "2026-09-16T10:47:50.699549+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -1255,7 +1255,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:49:20.699549+00:00",
     "finished_at": "2026-09-16T10:49:40.266008+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -1267,7 +1267,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:51:10.266008+00:00",
     "finished_at": "2026-09-16T10:51:30.429865+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -1279,7 +1279,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:53:00.429865+00:00",
     "finished_at": "2026-09-16T10:53:20.724890+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -1291,7 +1291,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:54:50.724890+00:00",
     "finished_at": "2026-09-16T10:55:11.238412+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -1303,7 +1303,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:56:41.238412+00:00",
     "finished_at": "2026-09-16T10:57:01.926732+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 256
   },
@@ -1315,7 +1315,7 @@
     "provenance": "projected",
     "started_at": "2026-09-16T10:58:31.926732+00:00",
     "finished_at": "2026-09-16T10:59:37.533950+00:00",
-    "git_sha": "b5ebca32f94c4efdf23b1388d769305e5f7ff1aa",
+    "git_sha": "7428e688a7632c52871e67745fe7c00c8afbb9e9",
     "gpu_name": "NVIDIA H100 80GB HBM3",
     "num_requests": 1212
   }

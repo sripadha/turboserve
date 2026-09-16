@@ -258,7 +258,7 @@ stay valid across every re-render.
 | vLLM (fp8) | 64 | 256 | 0.0000 | 126.0 | 288.0 | 16.42 | 18.97 | 5601.9 | 3345.6 | 11.62 | 0.207 |
 | vLLM (fp8) | 128 | 256 | 0.0000 | 234.0 | 405.0 | 24.91 | 28.94 | 8555.7 | 4289.8 | 14.90 | 0.161 |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `naive` at concurrency 64:
 
@@ -294,7 +294,7 @@ Relative to `vLLM` at concurrency 64:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | vLLM (fp8) | 1.24x | 1.24x | -10.0% | -10.0% | -19.6% | -19.3% | 0.81x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 The other scenarios — `chaos`, `multi_lora`, `prefix_cache`, `spec_decode` — are in [docs/results.md](docs/results.md), with the plots and the raw records behind every row.
 

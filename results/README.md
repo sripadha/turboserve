@@ -25,7 +25,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | kill:every=10s | 3 | 1212 | 0.0041 | 22.9 | 37.4 | 5.20 | 5.45 | 670.6 | 1942.7 | 19.92 | 0.356 |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Scenario-specific figures:
 
@@ -33,7 +33,7 @@ Scenario-specific figures:
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | kill:every=10s | 3 | kill:every=10s | 20 | 5 | 0 | 236 | 12.015 | 2.446 |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Result files:
 
@@ -58,7 +58,7 @@ Result files:
 | base only | 64 | 256 | 0.0000 | 150.0 | 360.0 | 26.86 | 31.47 | 7332.9 | 1649.6 | 10.55 | 0.419 |
 | base only (vllm) | 64 | 256 | 0.0000 | 110.0 | 270.0 | 15.94 | 18.69 | 4376.6 | 2748.2 | 17.57 | 0.252 |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `base only` at concurrency 64:
 
@@ -69,7 +69,7 @@ Relative to `base only` at concurrency 64:
 | 100 adapters | 0.93x | 0.93x | +8.1% | +8.1% | +7.2% | +7.2% | 1.07x |
 | 128 adapters | 0.92x | 0.92x | +9.4% | +9.4% | +8.6% | +8.6% | 1.09x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `base only (vllm)` at concurrency 64:
 
@@ -80,7 +80,7 @@ Relative to `base only (vllm)` at concurrency 64:
 | 100 adapters (vllm) | 0.94x | 0.94x | +7.2% | +7.2% | +6.5% | +6.5% | 1.07x |
 | 128 adapters (vllm) | 0.93x | 0.93x | +8.4% | +8.4% | +7.7% | +7.7% | 1.08x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Scenario-specific figures:
 
@@ -115,7 +115,7 @@ Scenario-specific figures — `lora`:
 | 100 adapters | 100 | 256 | 0 | 256 | 256 | 192 | 256 | 120588 | 120588 | 0.000 | 1.000 | 100 | 64 | 64 | 0 | 16 | 80740352 | 5167382528 | 5167382528 | 8074035200 |
 | 128 adapters | 128 | 256 | 0 | 256 | 256 | 192 | 256 | 120588 | 120588 | 0.000 | 1.000 | 128 | 64 | 64 | 0 | 16 | 80740352 | 5167382528 | 5167382528 | 10334765056 |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Result files:
 
@@ -164,7 +164,7 @@ Result files:
 | vLLM (fp8) | 64 | 256 | 0.0000 | 126.0 | 288.0 | 16.42 | 18.97 | 5601.9 | 3345.6 | 11.62 | 0.207 |
 | vLLM (fp8) | 128 | 256 | 0.0000 | 234.0 | 405.0 | 24.91 | 28.94 | 8555.7 | 4289.8 | 14.90 | 0.161 |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `naive` at concurrency 32:
 
@@ -177,7 +177,7 @@ Relative to `naive` at concurrency 32:
 | vLLM | 40.57x | 40.57x | -100.0% | -99.9% | — | -97.5% | 0.02x |
 | vLLM (fp8) | 45.43x | 45.43x | -100.0% | -99.9% | — | -97.8% | 0.02x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `static batch` at concurrency 32:
 
@@ -190,7 +190,7 @@ Relative to `static batch` at concurrency 32:
 | vLLM | 4.25x | 4.25x | -99.7% | -99.3% | — | -76.0% | 0.24x |
 | vLLM (fp8) | 4.76x | 4.76x | -99.7% | -99.4% | — | -78.6% | 0.21x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `SGLang` at concurrency 32:
 
@@ -198,7 +198,7 @@ Relative to `SGLang` at concurrency 32:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | SGLang (fp8) | 1.12x | 1.12x | -10.1% | -10.0% | -10.7% | -10.7% | 0.89x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `vLLM` at concurrency 32:
 
@@ -206,7 +206,7 @@ Relative to `vLLM` at concurrency 32:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | vLLM (fp8) | 1.12x | 1.12x | -10.0% | -10.0% | -10.7% | -10.7% | 0.89x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `naive` at concurrency 64:
 
@@ -219,7 +219,7 @@ Relative to `naive` at concurrency 64:
 | vLLM | 78.20x | 78.20x | -100.0% | -99.9% | — | -98.7% | 0.01x |
 | vLLM (fp8) | 96.97x | 96.97x | -100.0% | -99.9% | — | -99.0% | 0.01x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `static batch` at concurrency 64:
 
@@ -232,7 +232,7 @@ Relative to `static batch` at concurrency 64:
 | vLLM | 5.16x | 5.16x | -99.6% | -99.1% | — | -80.3% | 0.19x |
 | vLLM (fp8) | 6.40x | 6.40x | -99.6% | -99.2% | — | -84.1% | 0.16x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `SGLang` at concurrency 64:
 
@@ -240,7 +240,7 @@ Relative to `SGLang` at concurrency 64:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | SGLang (fp8) | 1.24x | 1.24x | -10.0% | -10.0% | -19.6% | -19.3% | 0.81x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `vLLM` at concurrency 64:
 
@@ -248,7 +248,7 @@ Relative to `vLLM` at concurrency 64:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | vLLM (fp8) | 1.24x | 1.24x | -10.0% | -10.0% | -19.6% | -19.3% | 0.81x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `naive` at concurrency 128:
 
@@ -261,7 +261,7 @@ Relative to `naive` at concurrency 128:
 | vLLM | 95.65x | 95.65x | -100.0% | -100.0% | — | -99.0% | 0.01x |
 | vLLM (fp8) | 124.34x | 124.34x | -100.0% | -100.0% | — | -99.2% | 0.01x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `static batch` at concurrency 128:
 
@@ -274,7 +274,7 @@ Relative to `static batch` at concurrency 128:
 | vLLM | 4.43x | 4.43x | -99.5% | -99.1% | — | -77.5% | 0.23x |
 | vLLM (fp8) | 5.76x | 5.76x | -99.5% | -99.2% | — | -82.7% | 0.17x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `SGLang` at concurrency 128:
 
@@ -282,7 +282,7 @@ Relative to `SGLang` at concurrency 128:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | SGLang (fp8) | 1.30x | 1.30x | -10.0% | -10.0% | -23.4% | -23.1% | 0.77x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `vLLM` at concurrency 128:
 
@@ -290,7 +290,7 @@ Relative to `vLLM` at concurrency 128:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | vLLM (fp8) | 1.30x | 1.30x | -10.0% | -10.0% | -23.4% | -23.1% | 0.77x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Scenario-specific figures:
 
@@ -318,7 +318,7 @@ Scenario-specific figures:
 | vLLM (fp8) | — | — | — | — | — | — | — | — | — | — | — | 64 | 2 | — |
 | vLLM (fp8) | — | — | — | — | — | — | — | — | — | — | — | 128 | 2 | — |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Result files:
 
@@ -365,7 +365,7 @@ Result files:
 | vLLM cache off | 32 | 128 | 0.0000 | 152.0 | 372.2 | 20.36 | 23.86 | 3019.1 | 1149.4 | 11.98 | 0.602 |
 | vLLM cache on | 32 | 128 | 0.0000 | 113.0 | 276.2 | 19.56 | 22.92 | 2860.7 | 1213.6 | 12.65 | 0.570 |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `cache off` at concurrency 32:
 
@@ -373,7 +373,7 @@ Relative to `cache off` at concurrency 32:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | cache on | 1.05x | 1.05x | -26.2% | -26.0% | -4.0% | -5.0% | 0.95x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `SGLang cache off` at concurrency 32:
 
@@ -381,7 +381,7 @@ Relative to `SGLang cache off` at concurrency 32:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | SGLang cache on | 1.06x | 1.06x | -28.7% | -29.0% | -3.9% | -5.2% | 0.95x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `vLLM cache off` at concurrency 32:
 
@@ -389,7 +389,7 @@ Relative to `vLLM cache off` at concurrency 32:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | vLLM cache on | 1.06x | 1.06x | -25.7% | -25.8% | -3.9% | -5.2% | 0.95x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Scenario-specific figures:
 
@@ -402,7 +402,7 @@ Scenario-specific figures:
 | vLLM cache off | 1024 | False | — | — | — | — | — | — | — | — | — | — | — | — |
 | vLLM cache on | 1024 | True | — | — | — | — | — | — | — | — | — | — | — | — |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Result files:
 
@@ -498,7 +498,7 @@ Result files:
 | vLLM target-7b-ngram / target only | 4 | 128 | 0.0000 | 48.4 | 97.5 | 9.02 | 10.54 | 2542.6 | 383.1 | 1.99 | 1.805 |
 | vLLM target-7b-ngram / target only | 16 | 128 | 0.0000 | 148.2 | 296.4 | 12.96 | 15.25 | 3711.6 | 999.9 | 5.20 | 0.692 |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `target-3b-draft-1.5b / target only` at concurrency 1:
 
@@ -508,7 +508,7 @@ Relative to `target-3b-draft-1.5b / target only` at concurrency 1:
 | target-3b-draft-1.5b / k=4 | 1.70x | 1.70x | +0.0% | +0.0% | -41.6% | -41.2% | 0.59x |
 | target-3b-draft-1.5b / k=6 | 1.60x | 1.60x | +0.0% | +0.0% | -37.9% | -37.6% | 0.62x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `target-7b-draft-0.5b / target only` at concurrency 1:
 
@@ -518,7 +518,7 @@ Relative to `target-7b-draft-0.5b / target only` at concurrency 1:
 | target-7b-draft-0.5b / k=4 | 1.55x | 1.55x | +0.0% | +0.0% | -35.9% | -35.5% | 0.65x |
 | target-7b-draft-0.5b / k=6 | 1.45x | 1.45x | +0.0% | +0.0% | -31.4% | -31.1% | 0.69x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `target-7b-ngram / target only` at concurrency 1:
 
@@ -528,7 +528,7 @@ Relative to `target-7b-ngram / target only` at concurrency 1:
 | target-7b-ngram / ngram k=4 | 1.22x | 1.22x | +0.0% | +0.0% | -18.2% | -18.1% | 0.82x |
 | target-7b-ngram / ngram k=6 | 1.16x | 1.16x | +0.0% | +0.0% | -13.9% | -13.8% | 0.86x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `vLLM target-3b-draft-1.5b / target only` at concurrency 1:
 
@@ -538,7 +538,7 @@ Relative to `vLLM target-3b-draft-1.5b / target only` at concurrency 1:
 | vLLM target-3b-draft-1.5b / k=4 | 1.74x | 1.74x | -0.0% | +0.0% | -43.1% | -42.6% | 0.57x |
 | vLLM target-3b-draft-1.5b / k=6 | 1.61x | 1.61x | -0.0% | +0.0% | -38.4% | -38.0% | 0.62x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `vLLM target-7b-draft-0.5b / target only` at concurrency 1:
 
@@ -548,7 +548,7 @@ Relative to `vLLM target-7b-draft-0.5b / target only` at concurrency 1:
 | vLLM target-7b-draft-0.5b / k=4 | 1.58x | 1.58x | +0.0% | +0.0% | -37.4% | -36.8% | 0.63x |
 | vLLM target-7b-draft-0.5b / k=6 | 1.46x | 1.46x | +0.0% | +0.0% | -31.9% | -31.5% | 0.69x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `vLLM target-7b-ngram / target only` at concurrency 1:
 
@@ -558,7 +558,7 @@ Relative to `vLLM target-7b-ngram / target only` at concurrency 1:
 | vLLM target-7b-ngram / ngram k=4 | 1.23x | 1.23x | +0.0% | +0.0% | -19.2% | -18.9% | 0.81x |
 | vLLM target-7b-ngram / ngram k=6 | 1.16x | 1.16x | +0.0% | +0.0% | -14.2% | -14.1% | 0.86x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `target-3b-draft-1.5b / target only` at concurrency 4:
 
@@ -568,7 +568,7 @@ Relative to `target-3b-draft-1.5b / target only` at concurrency 4:
 | target-3b-draft-1.5b / k=4 | 1.49x | 1.49x | +0.0% | +0.0% | -33.5% | -33.1% | 0.67x |
 | target-3b-draft-1.5b / k=6 | 1.42x | 1.42x | +0.0% | +0.0% | -30.1% | -29.8% | 0.70x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `target-7b-draft-0.5b / target only` at concurrency 4:
 
@@ -578,7 +578,7 @@ Relative to `target-7b-draft-0.5b / target only` at concurrency 4:
 | target-7b-draft-0.5b / k=4 | 1.38x | 1.38x | +0.0% | -0.0% | -28.4% | -28.1% | 0.72x |
 | target-7b-draft-0.5b / k=6 | 1.31x | 1.31x | +0.0% | -0.0% | -24.5% | -24.2% | 0.76x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `target-7b-ngram / target only` at concurrency 4:
 
@@ -588,7 +588,7 @@ Relative to `target-7b-ngram / target only` at concurrency 4:
 | target-7b-ngram / ngram k=4 | 1.15x | 1.15x | +0.0% | -0.0% | -13.6% | -13.5% | 0.87x |
 | target-7b-ngram / ngram k=6 | 1.11x | 1.11x | +0.0% | -0.0% | -10.3% | -10.2% | 0.90x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `vLLM target-3b-draft-1.5b / target only` at concurrency 4:
 
@@ -598,7 +598,7 @@ Relative to `vLLM target-3b-draft-1.5b / target only` at concurrency 4:
 | vLLM target-3b-draft-1.5b / k=4 | 1.52x | 1.52x | +0.0% | +0.0% | -35.1% | -34.7% | 0.66x |
 | vLLM target-3b-draft-1.5b / k=6 | 1.43x | 1.43x | +0.0% | +0.0% | -30.8% | -30.5% | 0.70x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `vLLM target-7b-draft-0.5b / target only` at concurrency 4:
 
@@ -608,7 +608,7 @@ Relative to `vLLM target-7b-draft-0.5b / target only` at concurrency 4:
 | vLLM target-7b-draft-0.5b / k=4 | 1.41x | 1.41x | +0.0% | +0.0% | -29.8% | -29.4% | 0.71x |
 | vLLM target-7b-draft-0.5b / k=6 | 1.32x | 1.32x | +0.0% | +0.0% | -25.1% | -24.7% | 0.76x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `vLLM target-7b-ngram / target only` at concurrency 4:
 
@@ -618,7 +618,7 @@ Relative to `vLLM target-7b-ngram / target only` at concurrency 4:
 | vLLM target-7b-ngram / ngram k=4 | 1.16x | 1.16x | +0.0% | +0.0% | -14.5% | -14.3% | 0.86x |
 | vLLM target-7b-ngram / ngram k=6 | 1.11x | 1.11x | +0.0% | +0.0% | -10.6% | -10.4% | 0.90x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `target-3b-draft-1.5b / target only` at concurrency 16:
 
@@ -628,7 +628,7 @@ Relative to `target-3b-draft-1.5b / target only` at concurrency 16:
 | target-3b-draft-1.5b / k=4 | 1.24x | 1.24x | +0.0% | +0.0% | -20.3% | -19.8% | 0.80x |
 | target-3b-draft-1.5b / k=6 | 1.21x | 1.21x | +0.0% | +0.0% | -17.9% | -17.5% | 0.83x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `target-7b-draft-0.5b / target only` at concurrency 16:
 
@@ -638,7 +638,7 @@ Relative to `target-7b-draft-0.5b / target only` at concurrency 16:
 | target-7b-draft-0.5b / k=4 | 1.19x | 1.19x | +0.0% | +0.0% | -16.7% | -16.3% | 0.84x |
 | target-7b-draft-0.5b / k=6 | 1.16x | 1.16x | +0.0% | +0.0% | -14.1% | -13.7% | 0.86x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `target-7b-ngram / target only` at concurrency 16:
 
@@ -648,7 +648,7 @@ Relative to `target-7b-ngram / target only` at concurrency 16:
 | target-7b-ngram / ngram k=4 | 1.08x | 1.08x | +0.0% | +0.0% | -7.4% | -7.2% | 0.93x |
 | target-7b-ngram / ngram k=6 | 1.06x | 1.06x | +0.0% | +0.0% | -5.5% | -5.3% | 0.95x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `vLLM target-3b-draft-1.5b / target only` at concurrency 16:
 
@@ -658,7 +658,7 @@ Relative to `vLLM target-3b-draft-1.5b / target only` at concurrency 16:
 | vLLM target-3b-draft-1.5b / k=4 | 1.26x | 1.26x | +0.0% | +0.0% | -21.6% | -20.6% | 0.79x |
 | vLLM target-3b-draft-1.5b / k=6 | 1.21x | 1.21x | +0.0% | +0.0% | -18.5% | -17.6% | 0.82x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `vLLM target-7b-draft-0.5b / target only` at concurrency 16:
 
@@ -668,7 +668,7 @@ Relative to `vLLM target-7b-draft-0.5b / target only` at concurrency 16:
 | vLLM target-7b-draft-0.5b / k=4 | 1.20x | 1.20x | +0.0% | +0.0% | -17.8% | -17.0% | 0.83x |
 | vLLM target-7b-draft-0.5b / k=6 | 1.16x | 1.16x | +0.0% | +0.0% | -14.6% | -13.8% | 0.86x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `vLLM target-7b-ngram / target only` at concurrency 16:
 
@@ -678,7 +678,7 @@ Relative to `vLLM target-7b-ngram / target only` at concurrency 16:
 | vLLM target-7b-ngram / ngram k=4 | 1.08x | 1.08x | +0.0% | +0.0% | -7.9% | -7.5% | 0.92x |
 | vLLM target-7b-ngram / ngram k=6 | 1.06x | 1.06x | +0.0% | +0.0% | -5.7% | -5.4% | 0.95x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Scenario-specific figures:
 
@@ -721,7 +721,7 @@ Scenario-specific figures:
 | target-7b-ngram / target only | reference | 16 | 59930443776 | 0.003 | 0 | 25017 | 65319 | 0 | 49430 | 6280 | 0.000 | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
 | target-7b-ngram / target only | reference | 16 | 59930443776 | 0.012 | 0 | 25017 | 65319 | 0 | 49430 | 1589 | 0.000 | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git b5ebca3. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 7428e68. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Result files:
 
