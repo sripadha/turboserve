@@ -101,6 +101,42 @@ you use wastes memory. The gateway's tenant configuration maps a tenant's adapte
 the `model` string vLLM expects, which is what lets a tenant ask for its own fine-tune
 without knowing anything about the base model.
 
+### `--quantization fp8` and `--kv-cache-dtype fp8`
+
+FP8 is the launch option this deployment offers on Hopper, and it is two decisions that
+happen to share a flag prefix. `--quantization fp8` stores the linear weights as W8A8-FP8
+and runs the matmuls on the FP8 tensor cores an H100 has and an A100 does not;
+`--kv-cache-dtype fp8` stores the KV cache in E4M3 with per-tensor scales instead of bf16.
+Both halve bytes: the 7B checkpoint's weights go from about 15 GiB to about 7.6, and a KV
+token from 57344 bytes to 28672. Decode is memory-bandwidth bound — a step reads every
+weight to produce one token — and the KV cache is what decides how many sequences fit, so
+the two together move both of the quantities `values-h100.yaml`'s arithmetic is written in.
+
+It is a *launch* option, not a request parameter: the conversion happens once, while the
+weights load, and every request afterwards is served from the quantized copy. Two ways in,
+and they are not the same command line:
+
+```bash
+QUANT=fp8 deploy/vllm/launch.sh                                    # quantize on the fly
+QUANT=fp8 FP8_MODEL=Qwen/Qwen2.5-7B-Instruct-FP8 deploy/vllm/launch.sh   # pre-quantized
+```
+
+The first converts the bf16 checkpoint at load time, which costs a little startup and no
+extra download. The second serves a repository that already ships FP8 weights; such a
+checkpoint declares its own scheme in `config.json` and vLLM refuses a `--quantization`
+that disagrees with it, so the launcher passes only `--kv-cache-dtype` in that case and
+keeps `--served-model-name` on the bf16 name so clients address one model string either
+way. In the chart the same two cases are `engine.quantization: fp8` and, for the second,
+`engine.quantizedCheckpoint: true` with `engine.model` pointing at the `-FP8` repository.
+
+What FP8 costs is accuracy, and this repository does not measure accuracy, so the honest
+statement is the scope: the arms under `naive_vs_cb` in [docs/results.md](../../docs/results.md)
+say what it does to throughput, latency and cost per million tokens on this hardware, and
+nothing here claims it leaves the output distribution unchanged the way rejection-sampling
+verification does for speculative decoding. E4M3 with per-tensor scales is the conservative
+choice for the KV cache for exactly that reason; SGLang's counterpart flag takes
+`fp8_e5m2`, which trades mantissa for exponent range and needs no calibration.
+
 ### `--gpu-memory-utilization`
 
 The fraction of the GPU vLLM is allowed to claim; whatever is left after weights and

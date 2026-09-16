@@ -32,8 +32,12 @@ profiles:
         concurrencies: [32, 64, 128]
         # The two production engines are separate arms rather than one "production" arm:
         # each is measured against the same prompt pool through its own --url, and a row
-        # has to say which server produced it.
-        backends: [naive_hf, static_batch, reference, vllm, sglang]
+        # has to say which server produced it. The `_fp8` arms are the same two servers
+        # launched with FP8 weights and an FP8 KV cache (QUANT=fp8 in deploy/*/launch.sh):
+        # a numeric format is a launch decision, so it is a different server and therefore
+        # a different arm with a URL of its own.
+        backends:
+          [naive_hf, static_batch, reference, vllm, sglang, vllm_fp8, sglang_fp8]
 
       prefix_cache:
         model: Qwen/Qwen2.5-7B-Instruct

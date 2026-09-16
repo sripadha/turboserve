@@ -122,6 +122,34 @@ have to be split across steps. The gateway's tenant configuration maps a tenant'
 name to the `model` string SGLang expects, which is what lets a tenant ask for its own
 fine-tune without knowing anything about the base model.
 
+### `--quantization fp8` and `--kv-cache-dtype fp8_e5m2`
+
+The FP8 launch option, and the one place the two engines' argv genuinely differ.
+`--quantization fp8` stores the linear weights as W8A8-FP8 and runs the matmuls on the FP8
+tensor cores Hopper has; `--kv-cache-dtype` names the KV format outright, and `fp8_e5m2` is
+the scale-free one this deployment uses, where vLLM's `fp8` means E4M3 with per-tensor
+scales. E5M2 spends a bit of mantissa on exponent range, so it needs no calibration pass —
+the reason it is the default here rather than the more accurate format.
+
+Both halve bytes, which is what makes it a capacity decision: the 7B checkpoint's weights go
+from about 15 GiB to about 7.6, and a KV token from 57344 bytes to 28672, so
+`--mem-fraction-static 0.90` covers roughly twice the tokens it did before.
+
+```bash
+QUANT=fp8 deploy/sglang/launch.sh                                    # quantize on the fly
+QUANT=fp8 FP8_MODEL=Qwen/Qwen2.5-7B-Instruct-FP8 deploy/sglang/launch.sh   # pre-quantized
+```
+
+A pre-quantized checkpoint declares its scheme in its own `config.json`, so the launcher
+passes only `--kv-cache-dtype` for it. Unlike vLLM, SGLang has no `--served-model-name`, so
+swapping the checkpoint also swaps the `model` string clients send — which is why the
+on-the-fly path is the one the benchmark arms use. In the chart both cases are
+`engine.quantization: fp8`, with `engine.quantizedCheckpoint: true` selecting the second.
+
+What it is worth on this hardware is a rendered row: the `SGLang (fp8)` arm under
+`naive_vs_cb` in [docs/results.md](../../docs/results.md). Accuracy is not measured here and
+no claim is made about it.
+
 ### `--mem-fraction-static`
 
 The fraction of the GPU SGLang is allowed to claim for weights and KV cache; whatever is

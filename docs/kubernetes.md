@@ -64,6 +64,52 @@ holding tens of gigabytes of KV cache, and the engine image is an upstream relea
 `vllm/vllm-openai` or `lmsysorg/sglang`, both pinned — rather than anything built here, so
 its version is a value, not a rebuild.
 
+## FP8 on Hopper
+
+`engine.quantization` is the second value that changes what the engine container is asked to
+do, and unlike `engine.mode` it changes only its argv:
+
+| Value | vLLM renders | SGLang renders |
+| --- | --- | --- |
+| `none` (default) | nothing; the checkpoint is served at `engine.vllm.dtype` | nothing; served at `engine.sglang.dtype` |
+| `fp8` | `--quantization fp8 --kv-cache-dtype fp8` | `--quantization fp8 --kv-cache-dtype fp8_e5m2` |
+
+One value for both engines, because it is one capacity decision. FP8 halves two quantities
+that `deploy/*/values-h100.yaml` does its sizing arithmetic in: the 7B checkpoint's weights
+go from about 15 GiB to about 7.6, and a KV token from 57344 bytes to 28672. The same
+`gpuMemoryUtilization`/`memFractionStatic` of 0.90 therefore covers roughly twice the tokens,
+which is why `maxNumSeqs`/`maxRunningRequests` — not the block allocator — stays the thing
+that limits concurrency.
+
+The KV dtype is the one place the two argv genuinely differ. vLLM's `fp8` means E4M3 with
+per-tensor scales; SGLang names the format outright and this chart asks for `fp8_e5m2`, which
+spends a bit of mantissa on exponent range and needs no calibration pass. The chart hides
+neither behind a shared word: each mode renders the flag its own server accepts.
+
+Three rules the chart enforces at render time rather than in the cluster:
+
+- `engine.quantization` must be `none` or `fp8`; anything else fails `helm template`.
+- `fp8` requires a production mode. In `reference` mode the from-scratch engine runs
+  bf16/fp16 only ([`engine.md`](engine.md#limitations)) and in `mock` mode there are no
+  weights at all, so asking for it there is a refusal, not a silently ignored value.
+- `engine.quantizedCheckpoint: true` requires `fp8`. It says `engine.model` is *already* an
+  FP8 repository — such a checkpoint declares its scheme in its own `config.json`, and both
+  servers refuse a `--quantization` flag that disagrees with it, so only the KV-cache dtype
+  is rendered in that case.
+
+```bash
+helm upgrade --install turboserve deploy/helm/turboserve \
+  -f deploy/vllm/values-h100.yaml --set engine.quantization=fp8 \
+  --namespace turboserve
+```
+
+Both fp8 shapes are rendered and validated by `make k8s-lint`, and outside Kubernetes the
+same option is `QUANT=fp8` in `deploy/vllm/launch.sh` and `deploy/sglang/launch.sh` (see
+[`vastai.md`](vastai.md#fp8-arms)). What FP8 is worth on this hardware is a rendered row —
+the `vLLM (fp8)` and `SGLang (fp8)` arms of `naive_vs_cb` in [`results.md`](results.md) —
+and accuracy is not measured anywhere in this repository, so nothing here claims it is
+unchanged.
+
 ## Lanes and progressive delivery
 
 Every gateway pod carries a `turboserve.io/lane` label (`stable` or `canary`), the gateway

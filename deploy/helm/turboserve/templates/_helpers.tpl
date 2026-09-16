@@ -308,6 +308,16 @@ half-works. Each check is one a reviewer would otherwise have to make by reading
 {{- if not (has $mode (list "mock" "reference" "vllm" "sglang")) -}}
 {{- fail (printf "engine.mode must be one of mock|reference|vllm|sglang, got %q" $mode) -}}
 {{- end -}}
+{{- $quantization := .Values.engine.quantization -}}
+{{- if not (has $quantization (list "none" "fp8")) -}}
+{{- fail (printf "engine.quantization must be one of none|fp8, got %q" $quantization) -}}
+{{- end -}}
+{{- if and (eq $quantization "fp8") (not (include "turboserve.engine.standalone" .)) -}}
+{{- fail (printf "engine.quantization=fp8 needs a production engine (engine.mode vllm or sglang), not %q: the reference engine runs bf16/fp16 only and the mock backend has no weights at all" $mode) -}}
+{{- end -}}
+{{- if and .Values.engine.quantizedCheckpoint (ne $quantization "fp8") -}}
+{{- fail "engine.quantizedCheckpoint is true but engine.quantization is not fp8: an already-quantized checkpoint is served by asking for the scheme it carries" -}}
+{{- end -}}
 {{- if and .Values.canary.enabled .Values.canary.argoRollouts.enabled -}}
 {{- fail "canary.enabled and canary.argoRollouts.enabled are mutually exclusive: a Rollout owns its own pods, so the two would fight over the same lane labels" -}}
 {{- end -}}

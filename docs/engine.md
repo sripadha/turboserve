@@ -368,6 +368,15 @@ invalidate them.
   blocking call with no cancellation point, so `abort` only removes a request that has not
   started. This is a property of the baseline, and one of the concrete reasons a serving
   engine does not use `generate`.
+- **The reference engine runs bf16/fp16 only; there is no FP8 or int-quantized path.**
+  Weights are loaded at the dtype `Settings.dtype` resolves to, the KV cache is allocated at
+  that same dtype, and there is no quantized linear layer, no per-tensor scale and no
+  calibration step. FP8 is a *production-engine* option in this repository: vLLM and SGLang
+  take it as a launch flag (`engine.quantization: fp8` in the chart, `QUANT=fp8` in the two
+  launchers — see [`kubernetes.md`](kubernetes.md#fp8-on-hopper)), and the arms it produces
+  are measured beside the bf16 ones rather than being implemented here. Adding it to this
+  engine would mean quantized kernels in `engine/model/` and a scale-aware block layout in
+  `engine/core/kv_cache.py`, which is a different project from making the scheduling legible.
 - **No prompt logprobs.** `SamplingParams.logprobs` yields the sampled token's
   log-probability; per-position prompt logprobs are not computed.
 - **No benchmark has been run on a GPU here.** Everything above was verified on CPU with

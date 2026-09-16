@@ -20,6 +20,7 @@ suite runs.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -327,6 +328,107 @@ def test_error_rate_gate_falls_back_to_the_raw_records() -> None:
     result = _run_assert(payload, "--min-requests", "100")
     assert result.returncode == 1
     assert "1.0000% exceeds" in result.stderr
+
+
+# --- FP8 on the two production engines -------------------------------------------------
+
+
+def _launch_dry_run(script: Path, tmp_path: Path, **env: str) -> list[str]:
+    """Run one engine launcher with ``DRY_RUN=1`` and return the argv it printed.
+
+    The launchers refuse to start when their server is not installed, so a stub is put on
+    ``PATH`` (vLLM) or named through ``PYTHON`` (SGLang). Nothing is started: ``DRY_RUN=1``
+    prints the command line and exits, which is the whole point of that flag -- the flag set
+    is checkable on a machine with no GPU and no engine.
+    """
+    stub = tmp_path / "vllm"
+    stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    stub.chmod(0o755)
+    environment = {
+        "PATH": f"{tmp_path}:{os.environ['PATH']}",
+        "HOME": str(tmp_path),
+        "DRY_RUN": "1",
+        "PYTHON": str(stub),
+        **env,
+    }
+    result = subprocess.run(
+        ["bash", str(script)], capture_output=True, text=True, env=environment, check=False
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout.strip().split()
+
+
+@pytest.mark.parametrize(
+    ("engine", "quantization_flag", "kv_dtype"),
+    [("vllm", "--quantization", "fp8"), ("sglang", "--quantization", "fp8_e5m2")],
+)
+def test_quant_fp8_renders_each_engines_own_kv_cache_dtype(
+    engine: str, quantization_flag: str, kv_dtype: str, tmp_path: Path
+) -> None:
+    """The one place the two engines' argv genuinely differ, asserted on both of them.
+
+    vLLM's ``fp8`` KV dtype means E4M3 with per-tensor scales; SGLang names the format and
+    this deployment asks for the scale-free ``fp8_e5m2``. Passing one engine's spelling to
+    the other is a flag it rejects at startup, which no amount of YAML validation catches.
+    """
+    argv = _launch_dry_run(DEPLOY / engine / "launch.sh", tmp_path, QUANT="fp8")
+    assert quantization_flag in argv
+    assert argv[argv.index(quantization_flag) + 1] == "fp8"
+    assert argv[argv.index("--kv-cache-dtype") + 1] == kv_dtype
+
+
+@pytest.mark.parametrize("engine", ["vllm", "sglang"])
+def test_the_default_launch_is_unquantized(engine: str, tmp_path: Path) -> None:
+    """`none` is the default, and it renders no flag at all rather than `--quantization none`."""
+    argv = _launch_dry_run(DEPLOY / engine / "launch.sh", tmp_path)
+    assert "--quantization" not in argv
+    assert "--kv-cache-dtype" not in argv
+
+
+@pytest.mark.parametrize("engine", ["vllm", "sglang"])
+def test_a_pre_quantized_checkpoint_drops_the_quantization_flag(
+    engine: str, tmp_path: Path
+) -> None:
+    """Such a checkpoint declares its scheme in config.json and both servers refuse a flag
+    that disagrees with it, so only the KV dtype is passed."""
+    argv = _launch_dry_run(
+        DEPLOY / engine / "launch.sh", tmp_path, QUANT="fp8", FP8_MODEL="org/model-FP8"
+    )
+    assert "--quantization" not in argv
+    assert "--kv-cache-dtype" in argv
+    assert "org/model-FP8" in argv
+
+
+@pytest.mark.parametrize("engine", ["vllm", "sglang"])
+def test_an_unknown_quantization_is_refused_rather_than_passed_through(
+    engine: str, tmp_path: Path
+) -> None:
+    result = subprocess.run(
+        ["bash", str(DEPLOY / engine / "launch.sh")],
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": os.environ["PATH"],
+            "HOME": str(tmp_path),
+            "DRY_RUN": "1",
+            "QUANT": "int4",
+        },
+        check=False,
+    )
+    # Refused before the "is the server installed?" check, so the test needs no stub: an
+    # unusable value must fail loudly whatever else is wrong with the machine.
+    assert result.returncode == 2
+    assert "QUANT must be" in result.stderr
+
+
+def test_chart_values_declare_the_quantization_switch_off_by_default() -> None:
+    """FP8 needs Hopper-class tensor cores, so it is asked for, never defaulted into."""
+    values = yaml.safe_load((CHART / "values.yaml").read_text(encoding="utf-8"))
+    assert values["engine"]["quantization"] == "none"
+    assert values["engine"]["quantizedCheckpoint"] is False
+    for path in (DEPLOY / "vllm" / "values-h100.yaml", DEPLOY / "sglang" / "values-h100.yaml"):
+        profile = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert profile["engine"]["quantization"] == "none", f"{path.name} must not default to fp8"
 
 
 # --- the rest of the assets ----------------------------------------------------------------

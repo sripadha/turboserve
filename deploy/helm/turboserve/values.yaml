@@ -179,6 +179,24 @@ engine:
   # Model served. In mock mode it is only the name reported by /v1/models.
   model: Qwen/Qwen2.5-7B-Instruct
 
+  # Weight and KV-cache numeric format, for the two production modes: `none` serves the
+  # checkpoint at the engine's own dtype (bf16 here) and `fp8` serves it as W8A8-FP8 with an
+  # fp8 KV cache. One value for both engines, because it is one capacity decision -- half
+  # the weight bytes and half the KV bytes, so more of the device is left for concurrency --
+  # even though the two spell the KV dtype differently: vLLM takes `--quantization fp8
+  # --kv-cache-dtype fp8` (E4M3 with per-tensor scales) and SGLang `--quantization fp8
+  # --kv-cache-dtype fp8_e5m2`. Both need FP8 tensor cores: Ada, Hopper or newer. It does
+  # nothing in `mock` or `reference` mode -- the reference engine runs bf16/fp16 only (see
+  # docs/engine.md) -- and asking for it there is refused rather than ignored.
+  quantization: none
+
+  # Whether engine.model is *already* an FP8 checkpoint (a `-FP8` repository). Such a
+  # checkpoint declares its own scheme in config.json and both servers refuse a
+  # --quantization flag that names a different one, so with this true only the KV-cache
+  # dtype is rendered and the weights are loaded as they are shipped. Meaningless -- and
+  # rejected -- unless quantization is fp8.
+  quantizedCheckpoint: false
+
   # --- separate engine Deployment (engine.mode == "vllm" or "sglang") ----------------
   replicaCount: 1
   # An override for a mirror or a digest pin. Left empty, the image follows engine.mode:

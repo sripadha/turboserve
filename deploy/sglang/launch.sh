@@ -14,6 +14,8 @@
 # Usage:
 #   deploy/sglang/launch.sh                                  # defaults below
 #   PORT=30001 ENABLE_PREFIX_CACHING=0 deploy/sglang/launch.sh   # the prefix-cache control arm
+#   QUANT=fp8 deploy/sglang/launch.sh                            # FP8 weights and FP8 KV cache
+#   QUANT=fp8 FP8_MODEL=Qwen/Qwen2.5-7B-Instruct-FP8 deploy/sglang/launch.sh   # pre-quantized
 #   SPEC_ALGORITHM=EAGLE SPEC_DRAFT_MODEL=Qwen/Qwen2.5-0.5B-Instruct deploy/sglang/launch.sh
 #   ENABLE_LORA=1 LORA_PATHS="tenant-a=/adapters/tenant-a tenant-b=/adapters/tenant-b" deploy/sglang/launch.sh
 #
@@ -34,6 +36,24 @@ MAX_RUNNING_REQUESTS="${MAX_RUNNING_REQUESTS:-96}"
 CHUNKED_PREFILL_SIZE="${CHUNKED_PREFILL_SIZE:-8192}"
 TP_SIZE="${TP_SIZE:-1}"
 DTYPE="${DTYPE:-bfloat16}"
+
+# FP8 on Hopper, the counterpart of QUANT in deploy/vllm/launch.sh and of
+# `engine.quantization` in the Helm chart. `none` (the default) serves the checkpoint at
+# DTYPE; `fp8` serves the same weights as W8A8-FP8 with an fp8 KV cache. FP8 tensor cores --
+# Ada, Hopper or newer -- are required, and the conversion happens once at load time.
+#
+# The KV-cache dtype is the one place the two engines' flags genuinely differ: vLLM's `fp8`
+# means E4M3 with per-tensor scales, while SGLang names the format outright and its
+# scale-free option is `fp8_e5m2`, which is what this passes. E5M2 spends a bit of mantissa
+# on exponent range, so it needs no calibration -- the trade the projected FP8 arms in
+# scripts/project_h100_results.py are stated against.
+#
+# FP8_MODEL serves a checkpoint that is already quantized (a `-FP8` repository). It declares
+# its own scheme in config.json, so --quantization is left off and only the KV-cache dtype
+# is passed.
+QUANT="${QUANT:-none}"
+FP8_MODEL="${FP8_MODEL:-}"
+KV_CACHE_DTYPE="${KV_CACHE_DTYPE:-fp8_e5m2}"
 
 # RadixAttention prefix caching is ON by default in SGLang; there is no --enable flag, only
 # the switch that turns it off. Setting this to 0 is how the prefix-cache scenario's control
@@ -57,15 +77,35 @@ PYTHON="${PYTHON:-python}"
 LOG_FILE="${LOG_FILE:-}"
 DRY_RUN="${DRY_RUN:-0}"
 
+# Checked before anything else: an unusable value must fail loudly whatever else is wrong
+# with the machine, and a typo here would otherwise be discovered by SGLang minutes later,
+# after the weights have loaded.
+case "$QUANT" in
+  none | fp8) ;;
+  *)
+    echo "QUANT must be 'none' or 'fp8', got '${QUANT}'" >&2
+    exit 2
+    ;;
+esac
+
 "${PYTHON}" -c 'import sglang' >/dev/null 2>&1 || {
   echo "sglang is not importable by ${PYTHON}. Install it into the environment first" >&2
   echo "(this repository ships no sglang extra; see deploy/sglang/README.md)." >&2
   exit 127
 }
 
+# The checkpoint actually loaded; it differs from MODEL only for a pre-quantized FP8
+# repository. SGLang has no --served-model-name, so a measurement that swaps the checkpoint
+# also swaps the `model` string clients send -- which is why the on-the-fly path is the
+# default one the benchmark arms use.
+SERVE_MODEL="$MODEL"
+if [ "$QUANT" = "fp8" ] && [ -n "$FP8_MODEL" ]; then
+  SERVE_MODEL="$FP8_MODEL"
+fi
+
 args=(
   -m sglang.launch_server
-  --model-path "$MODEL"
+  --model-path "$SERVE_MODEL"
   --host "$HOST"
   --port "$PORT"
   --dtype "$DTYPE"
@@ -75,6 +115,13 @@ args=(
   --chunked-prefill-size "$CHUNKED_PREFILL_SIZE"
   --tp-size "$TP_SIZE"
 )
+
+if [ "$QUANT" = "fp8" ]; then
+  # Only for an unquantized checkpoint: a pre-quantized one carries its scheme in its own
+  # config, and naming a different one on the command line is how a load fails late.
+  if [ -z "$FP8_MODEL" ]; then args+=(--quantization fp8); fi
+  args+=(--kv-cache-dtype "$KV_CACHE_DTYPE")
+fi
 
 # The only prefix-caching flag there is: RadixAttention is on unless it is disabled.
 if [ "$ENABLE_PREFIX_CACHING" != "1" ]; then args+=(--disable-radix-cache); fi

@@ -20,6 +20,12 @@
 #   SGLANG_BASELINE_URL  a second SGLang server started WITH --disable-radix-cache, the
 #                        prefix-cache control arm for that engine -- RadixAttention is on
 #                        by default, so it is the control that needs the flag
+#   VLLM_FP8_URL         a vLLM server started with QUANT=fp8 (FP8 weights, FP8 KV cache);
+#                        enables the `vllm_fp8` arm of naive-vs-cb
+#   SGLANG_FP8_URL       the same for SGLang; enables the `sglang_fp8` arm. A numeric
+#                        format is a launch flag, so each fp8 arm is a server of its own --
+#                        one GPU runs them one at a time, which is why they are separate
+#                        URLs and not a flag on the bf16 arm
 #   TURBOSERVE           how to invoke the CLI (default: uv run --frozen turboserve)
 #   ADAPTERS_DIR         LoRA adapters the multi-lora scenario serves (default: adapters)
 #   SKIP                 space-separated scenario names to skip, e.g. "spec-decode chaos"
@@ -39,6 +45,8 @@ VLLM_URL="${VLLM_URL:-}"
 VLLM_BASELINE_URL="${VLLM_BASELINE_URL:-}"
 SGLANG_URL="${SGLANG_URL:-}"
 SGLANG_BASELINE_URL="${SGLANG_BASELINE_URL:-}"
+VLLM_FP8_URL="${VLLM_FP8_URL:-}"
+SGLANG_FP8_URL="${SGLANG_FP8_URL:-}"
 TURBOSERVE="${TURBOSERVE:-uv run --frozen turboserve}"
 SKIP="${SKIP:-}"
 DRY_RUN="${DRY_RUN:-0}"
@@ -126,6 +134,28 @@ if [[ -n "${SGLANG_URL}" ]]; then
     --arm sglang --url "${SGLANG_URL}" $(extra_flags naive-vs-cb)
 else
   log "no SGLANG_URL: skipping the SGLang arm of naive-vs-cb"
+fi
+
+# The FP8 arms. Same scenario, same prompt pool, same concurrency sweep; the only
+# difference is the server the URL points at, which was started with QUANT=fp8. They are
+# swept here rather than in the other scenarios because this is the one that varies load,
+# and what a numeric format buys is read off throughput and cost at concurrency.
+if [[ -n "${VLLM_FP8_URL}" ]]; then
+  # shellcheck disable=SC2046
+  run_step naive-vs-cb-vllm-fp8 ${TURBOSERVE} bench naive-vs-cb \
+    --profile "${PROFILE}" --results-dir "${RESULTS_DIR}" \
+    --arm vllm_fp8 --url "${VLLM_FP8_URL}" $(extra_flags naive-vs-cb)
+else
+  log "no VLLM_FP8_URL: skipping the vLLM (fp8) arm of naive-vs-cb"
+fi
+
+if [[ -n "${SGLANG_FP8_URL}" ]]; then
+  # shellcheck disable=SC2046
+  run_step naive-vs-cb-sglang-fp8 ${TURBOSERVE} bench naive-vs-cb \
+    --profile "${PROFILE}" --results-dir "${RESULTS_DIR}" \
+    --arm sglang_fp8 --url "${SGLANG_FP8_URL}" $(extra_flags naive-vs-cb)
+else
+  log "no SGLANG_FP8_URL: skipping the SGLang (fp8) arm of naive-vs-cb"
 fi
 
 # ---------------------------------------------------------------------------------------

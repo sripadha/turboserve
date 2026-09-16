@@ -51,7 +51,7 @@ objective the run records alongside the numbers.
 
 ## `naive-vs-cb` — what batching is worth
 
-Four arms, one prompt pool, one load generator:
+Seven arms, one prompt pool, one load generator:
 
 | Arm | Label in tables | Served by |
 | --- | --- | --- |
@@ -60,12 +60,24 @@ Four arms, one prompt pool, one load generator:
 | `reference` | `continuous batching` | this repository's `LLMEngine` via `LocalEngineBackend` |
 | `vllm` | `vLLM` | an OpenAI-compatible server named by `--url` |
 | `sglang` | `SGLang` | the same, with a different server behind the URL |
+| `vllm_fp8` | `vLLM (fp8)` | a vLLM server started with FP8 weights and an FP8 KV cache |
+| `sglang_fp8` | `SGLang (fp8)` | the same for SGLang, whose KV dtype is `fp8_e5m2` |
 
 The two production engines are separate arms and not one "production" arm, because a row has
 to say which server produced it; mechanically they are identical — one `OpenAICompatBackend`
 against one URL — and the engine's name is recorded in `config["engine"]["engine"]`, next to
 whatever that server reported about itself on `/version` and `/get_server_info`. One `--url`
 is one server, so a host running both engines is swept once per engine.
+
+The `_fp8` arms follow the same rule one step further. A numeric format is a *launch* flag
+(`QUANT=fp8 deploy/vllm/launch.sh`, `engine.quantization: fp8` in the chart), so an fp8 arm
+is a different server and gets a URL of its own; a client cannot see how a server was
+started, which is why the arm also records `config["engine"]["quantization"]` and
+`config["engine"]["kv_cache_dtype"]` — the operator's declaration of what the row means,
+written into the file that carries the numbers. FP8 is swept in this scenario only: it is
+the one that varies load, and what quantization buys is read off the throughput and cost
+columns at concurrency. Nothing here measures accuracy, so no arm claims the output
+distribution is unchanged.
 
 The sweep is over the profile's concurrencies; each (arm, concurrency) pair writes its own
 result file, and the rendered relative table is grouped by concurrency because arms are only
@@ -97,6 +109,7 @@ the first request's settings. The honest consequence is stated in
 uv run turboserve bench naive-vs-cb --profile h100
 uv run turboserve bench naive-vs-cb --profile h100 --arm vllm   --url http://127.0.0.1:8000
 uv run turboserve bench naive-vs-cb --profile h100 --arm sglang --url http://127.0.0.1:30000
+uv run turboserve bench naive-vs-cb --profile h100 --arm vllm_fp8 --url http://127.0.0.1:8002
 ```
 
 `summary["derived"]` carries the engine's own counters for the arm that reported them
@@ -298,6 +311,8 @@ DRY_RUN=1 ./scripts/run_all_benchmarks.sh     # print the commands, run nothing
 | `VLLM_BASELINE_URL` | a second vLLM server started **without** `--enable-prefix-caching`, the prefix-cache control arm |
 | `SGLANG_URL` | an OpenAI-compatible SGLang server; enables the `sglang` arms of `naive-vs-cb` and `prefix-cache` |
 | `SGLANG_BASELINE_URL` | a second SGLang server started **with** `--disable-radix-cache`, that engine's prefix-cache control arm |
+| `VLLM_FP8_URL` | a vLLM server started with `QUANT=fp8`; enables the `vllm_fp8` arm of `naive-vs-cb` |
+| `SGLANG_FP8_URL` | the same for SGLang; enables the `sglang_fp8` arm |
 | `TURBOSERVE` | how to invoke the CLI (default `uv run --frozen turboserve`) |
 | `SKIP` | space-separated scenario names to skip |
 | `ADAPTERS_DIR` | LoRA adapters the `multi-lora` scenario serves (default `adapters`) |

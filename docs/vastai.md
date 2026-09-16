@@ -153,6 +153,31 @@ Scenarios take `--profile`, which selects models and sizes from `configs/bench/p
 (7B, 3B, 1.5B, 0.5B — the targets and their speculative-decoding drafts). Override with
 `TURBOSERVE_MODELS`.
 
+## FP8 arms
+
+The `h100` profile declares two more arms for `naive-vs-cb`, `vllm_fp8` and `sglang_fp8`:
+the same two production engines serving the same checkpoint with FP8 weights and an FP8 KV
+cache. On the instance they are one environment variable each on the launcher —
+
+```bash
+QUANT=fp8 PORT=8002 deploy/vllm/launch.sh &     # then VLLM_FP8_URL=http://127.0.0.1:8002/v1
+QUANT=fp8 PORT=30002 deploy/sglang/launch.sh &  # then SGLANG_FP8_URL=http://127.0.0.1:30002/v1
+```
+
+— and `scripts/run_all_benchmarks.sh` runs each arm when its URL is set, exactly as
+`VLLM_URL` and `SGLANG_URL` gate the bf16 ones. The reason they are separate servers rather
+than a request parameter is that a numeric format is decided when the weights load; the
+reason they are separate *runs* is that one H100 holds one of these servers at a time, so
+the suite starts a server, sweeps it, stops it, and starts the next. The Kubernetes
+equivalent is `engine.quantization: fp8` ([`kubernetes.md`](kubernetes.md#fp8-on-hopper)).
+
+FP8 halves both quantities the instance is sized by — the 7B checkpoint's weights drop from
+about 15 GiB to about 7.6, a KV token from 57344 bytes to 28672 — so the fp8 servers fit
+beside a larger KV pool at the same `--gpu-memory-utilization`. `onstart.sh` downloads the
+bf16 checkpoints only: the default path quantizes them at load time, and a pre-quantized
+`-FP8` repository is an extra download this suite does not ask for (`FP8_MODEL` in either
+launcher serves one if you have it).
+
 ## What has been run from this checkout
 
 The scripts have been syntax-checked (`bash -n`, in CI on every push) and their embedded

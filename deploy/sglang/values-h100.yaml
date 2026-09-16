@@ -48,6 +48,18 @@ engine:
   model: Qwen/Qwen2.5-7B-Instruct
   replicaCount: 1
 
+  # bf16 weights and a bf16 KV cache (see the arithmetic above). `fp8` halves both: the
+  # weights become W8A8-FP8 (~7.6 GiB instead of ~15) and a KV token costs 28672 bytes
+  # instead of 57344, so the same 0.90 of the device holds roughly twice the tokens and the
+  # allocator stops being what limits concurrency first. It needs FP8 tensor cores -- this
+  # node selector already pins an H100, which has them -- and it is a launch decision: the
+  # conversion happens once, at load time. What it is worth on this hardware is a rendered
+  # row in docs/results.md, not a number written here.
+  quantization: none
+  # engine.model above is a bf16 checkpoint, so fp8 means "quantize it on the fly". Point
+  # engine.model at a `-FP8` repository and set this true to load one that ships quantized.
+  quantizedCheckpoint: false
+
   # SGLang's own default port, so a command line copied from its documentation and the
   # gateway's `--engine http://<release>-engine:30000/v1` agree. The chart passes the port
   # to the server explicitly, so this is a convention rather than a requirement.

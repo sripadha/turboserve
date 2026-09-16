@@ -55,7 +55,7 @@ then edits and re-syncs).
 | `make bench-h100` | rents a vast.ai H100, runs the suite there, pulls `results/` back |
 | `make results` | regenerates `results/README.md`, `docs/results.md`, the README's results section and the plots from `results/*.json` |
 | `make sync-chart-files` | copies the Grafana dashboard and Prometheus rules into the Helm chart (a unit test fails when they drift) |
-| `make k8s-lint` | `helm lint`, four `helm template \| kubeconform` renders (defaults, vLLM, SGLang, Argo Rollouts), the kustomize overlays, shell syntax |
+| `make k8s-lint` | `helm lint`, six `helm template \| kubeconform` renders (defaults, vLLM, SGLang, each production engine again with `engine.quantization=fp8`, Argo Rollouts), the kustomize overlays, shell syntax |
 | `make docker-build` | builds the gateway image (`docker build -f Dockerfile.gateway`); needs Docker |
 
 `make lint typecheck test` must be green before you push. The same three run in CI, in the

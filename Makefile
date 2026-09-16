@@ -131,6 +131,16 @@ k8s-lint: ## helm lint + helm template | kubeconform + kustomize build (needs he
 		--set engine.sglang.speculative.enabled=true \
 		--set engine.sglang.lora.paths='{acme=/adapters/acme}' \
 		| $(KUBECONFORM) -strict -summary -ignore-missing-schemas
+	$(HELM) template turboserve $(CHART) \
+		-f deploy/vllm/values-h100.yaml \
+		--set engine.quantization=fp8 \
+		| $(KUBECONFORM) -strict -summary -ignore-missing-schemas
+	$(HELM) template turboserve $(CHART) \
+		-f deploy/sglang/values-h100.yaml \
+		--set engine.quantization=fp8 \
+		--set engine.quantizedCheckpoint=true \
+		--set engine.model=Qwen/Qwen2.5-7B-Instruct-FP8 \
+		| $(KUBECONFORM) -strict -summary -ignore-missing-schemas
 	$(HELM) template turboserve $(CHART) --set canary.argoRollouts.enabled=true \
 		| $(KUBECONFORM) -strict -summary -ignore-missing-schemas
 	@for overlay in deploy/kustomize/overlays/*/; do \

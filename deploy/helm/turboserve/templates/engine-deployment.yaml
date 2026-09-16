@@ -110,6 +110,18 @@ spec:
             - {{ .Values.engine.sglang.tpSize | quote }}
             - --log-level
             - {{ .Values.gateway.logLevel | lower | quote }}
+            {{- if eq .Values.engine.quantization "fp8" }}
+            # W8A8-FP8 weights and an fp8 KV cache. SGLang names the KV format outright:
+            # fp8_e5m2 is the scale-free one, where vLLM's `fp8` means E4M3 with per-tensor
+            # scales. A checkpoint that is already quantized declares its scheme itself, so
+            # only the KV dtype is passed for it.
+            {{- if not .Values.engine.quantizedCheckpoint }}
+            - --quantization
+            - fp8
+            {{- end }}
+            - --kv-cache-dtype
+            - fp8_e5m2
+            {{- end }}
             {{- if not .Values.engine.sglang.enablePrefixCaching }}
             # RadixAttention prefix caching is on unless it is disabled: identical leading
             # tokens adopt the KV pages already in the radix tree, so a shared system
@@ -166,6 +178,20 @@ spec:
             - {{ .Values.engine.vllm.tensorParallelSize | quote }}
             - --dtype
             - {{ .Values.engine.vllm.dtype | quote }}
+            {{- if eq .Values.engine.quantization "fp8" }}
+            # W8A8-FP8 weights and an fp8 KV cache, converted once at load time. vLLM's
+            # `fp8` KV dtype is E4M3 with per-tensor scales; SGLang's flag above names
+            # fp8_e5m2 instead, which is the one place the two argv genuinely differ. A
+            # checkpoint that is already quantized declares its scheme itself, and vLLM
+            # refuses a --quantization that disagrees with it, so it renders only the KV
+            # dtype.
+            {{- if not .Values.engine.quantizedCheckpoint }}
+            - --quantization
+            - fp8
+            {{- end }}
+            - --kv-cache-dtype
+            - fp8
+            {{- end }}
             {{- if .Values.engine.vllm.enablePrefixCaching }}
             # Automatic prefix caching: identical leading blocks of a prompt reuse the KV
             # already in the cache, so a shared system prompt is prefilled once per node

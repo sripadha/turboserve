@@ -28,6 +28,18 @@ and only the thing that serves them changes:
     they are separate arms only because a row has to say which server produced it. One
     invocation measures one server, so a machine running both is swept once per engine.
 
+``vLLM (fp8)`` / ``SGLang (fp8)``
+    The same two servers launched with FP8 weights and an FP8 KV cache
+    (``QUANT=fp8 deploy/vllm/launch.sh``, ``engine.quantization: fp8`` in the chart). Still
+    one ``OpenAICompatBackend`` against one URL -- the numeric format is a property of the
+    server, not of the request -- so the arm exists to *name* it: a client cannot see how a
+    server was started, and a row that did not say would be indistinguishable from the bf16
+    one. Each fp8 arm is therefore its own ``--url``, pointing at a server the operator
+    launched that way, and its ``config["engine"]`` records ``quantization`` and
+    ``kv_cache_dtype`` so the file says what was claimed of it. FP8 arms belong to this
+    scenario only: it is the one that sweeps concurrency, and what quantization buys is
+    read off the throughput and cost columns at load.
+
 Three deliberate choices about what is *not* varied.
 
 **Prefix caching is off** for every engine arm by default. The prompt pool is reused across
@@ -94,20 +106,64 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["ARM_LABELS", "SCENARIO", "naive_vs_cb_command", "run_scenario"]
+__all__ = [
+    "ARM_LABELS",
+    "FP8_KV_CACHE_DTYPE",
+    "extra_comparisons",
+    "QUANTIZED_ENGINE_LABELS",
+    "REMOTE_ARMS",
+    "SCENARIO",
+    "engine_of",
+    "naive_vs_cb_command",
+    "run_scenario",
+]
 
 SCENARIO = "naive_vs_cb"
 
+#: Suffix that turns a production engine's arm name into its FP8 arm's name.
+FP8_SUFFIX = "_fp8"
+
+#: The KV-cache dtype each engine's FP8 arm is launched with. Not one string for both: vLLM
+#: spells E4M3-with-per-tensor-scales ``fp8`` while SGLang names the format outright and this
+#: deployment asks it for the scale-free ``fp8_e5m2`` (``deploy/*/launch.sh``,
+#: ``deploy/helm/turboserve/templates/engine-deployment.yaml``). Recording the engine's own
+#: spelling is what lets a reader line a result file up against the command line that
+#: produced it.
+FP8_KV_CACHE_DTYPE: dict[str, str] = {"vllm": "fp8", "sglang": "fp8_e5m2"}
+
+#: The FP8 arms, derived from the production engines rather than spelled out, so adding a
+#: third engine to ``REMOTE_ENGINE_LABELS`` gives it an FP8 arm for free.
+QUANTIZED_ENGINE_LABELS: dict[str, str] = {
+    f"{name}{FP8_SUFFIX}": f"{label} (fp8)" for name, label in REMOTE_ENGINE_LABELS.items()
+}
+
+#: Every arm served over an OpenAI-compatible URL, quantized or not. The predicate the
+#: scenario branches on, so the FP8 arms need no separate code path: they differ from their
+#: bf16 twins in how the server was launched, which is the operator's business and the
+#: result file's, not the client's.
+REMOTE_ARMS: dict[str, str] = {**REMOTE_ENGINE_LABELS, **QUANTIZED_ENGINE_LABELS}
+
 #: How each profile backend name is shown in the rendered tables. The keys are the values
 #: a profile's ``backends`` list may hold; the values are what a reader sees. The remote
-#: engines come from ``REMOTE_ENGINE_LABELS`` rather than being spelled again here, so a
-#: production engine is named in exactly one place in this package.
+#: engines come from ``REMOTE_ARMS`` rather than being spelled again here, so a production
+#: engine is named in exactly one place in this package.
 ARM_LABELS: dict[str, str] = {
     "naive_hf": "naive",
     "static_batch": "static batch",
     "reference": "continuous batching",
-    **REMOTE_ENGINE_LABELS,
+    **REMOTE_ARMS,
 }
+
+
+def engine_of(arm: str) -> str:
+    """The production engine behind an arm name, with any quantization suffix removed.
+
+    ``vllm_fp8`` and ``vllm`` are the same server software at two numeric formats, and
+    everything that cares about *which engine answered* -- the recorded ``engine`` field, the
+    KV-dtype lookup -- wants the former answer, not the arm name.
+    """
+    return arm[: -len(FP8_SUFFIX)] if arm.endswith(FP8_SUFFIX) else arm
+
 
 #: The arm every other arm is compared against in the rendered relative table.
 BASELINE_ARM = "naive_hf"
@@ -118,6 +174,24 @@ BASELINE_ARM = "naive_hf"
 #: thing a serving stack does when it batches naively -- and that ratio is only a rendered
 #: number if some arm asks for it (``config["compare_to"]``).
 SECONDARY_ARM = "static_batch"
+
+
+def extra_comparisons(arm: str, *, with_static: bool) -> list[str]:
+    """Reference arms ``arm`` asks the renderer to draw an extra relative table against.
+
+    ``config["compare_to"]`` is how an arm says "this ratio is worth rendering": the
+    scenario's declared baseline is sequential decoding, but two other comparisons are the
+    ones a reader came for. Continuous batching against a *padded static batch* is the point
+    of the scenario, and an FP8 arm against its own bf16 twin is the point of measuring FP8
+    at all -- against `naive` it would render a ratio of two engines and a numeric format
+    multiplied together, which is not a number anybody can act on.
+    """
+    labels: list[str] = []
+    if with_static:
+        labels.append(ARM_LABELS[SECONDARY_ARM])
+    if arm in QUANTIZED_ENGINE_LABELS:
+        labels.append(ARM_LABELS[engine_of(arm)])
+    return labels
 
 
 def _select_arms(work: NaiveVsCBProfile, requested: Sequence[str] | None) -> list[str]:
@@ -149,7 +223,7 @@ def _make_backend(
     local_files_only: bool,
 ) -> AnyBackend:
     """Build the backend one arm is served by."""
-    if arm in REMOTE_ENGINE_LABELS:
+    if arm in REMOTE_ARMS:
         if not url:
             raise ScenarioError(
                 f"the {arm} arm needs --url pointing at an OpenAI-compatible server"
@@ -236,7 +310,7 @@ async def run_scenario(
         )
         # Asked once per arm rather than once per run: it is a property of the server, not
         # of the load, and a server that answers nothing must not be re-probed per level.
-        server = await remote_server_info(backend) if arm in REMOTE_ENGINE_LABELS else {}
+        server = await remote_server_info(backend) if arm in REMOTE_ARMS else {}
         try:
             for level in levels:
                 outcomes.append(
@@ -297,6 +371,7 @@ async def _run_one(
     logger.info("naive_vs_cb: arm=%s concurrency=%d requests=%d", arm, level, len(requests))
     load = await run_load(requests, backend.generate, spec=spec, warmup=warm_requests)
 
+    comparisons = extra_comparisons(arm, with_static=compare_to_static)
     run = open_run(
         SCENARIO,
         profile.name,
@@ -309,7 +384,7 @@ async def _run_one(
             "model": work_model,
             "output_tokens": uniform_output,
             "engine": _engine_block(arm, options, url, server),
-            **({"compare_to": [ARM_LABELS[SECONDARY_ARM]]} if compare_to_static else {}),
+            **({"compare_to": comparisons} if comparisons else {}),
         },
     )
     load.into(run)
@@ -345,10 +420,25 @@ def _engine_block(
 
     A remote arm records the engine's *name* as well as its URL, because the URL says where
     the server was and not what it was, and ``server`` carries whatever the server itself
-    reported (see :func:`remote_server_info`) -- empty when it reported nothing.
+    reported (see :func:`remote_server_info`) -- empty when it reported nothing. It also
+    records the numeric format the arm was asked for, which is the difference between the
+    ``vllm`` and ``vllm_fp8`` rows and is otherwise invisible from the client side.
     """
-    if arm in REMOTE_ENGINE_LABELS:
-        block: dict[str, Any] = {"kind": "openai", "engine": arm, "url": url}
+    if arm in REMOTE_ARMS:
+        quantized = arm in QUANTIZED_ENGINE_LABELS
+        engine = engine_of(arm)
+        block: dict[str, Any] = {
+            "kind": "openai",
+            "engine": engine,
+            "url": url,
+            # What the arm *claims* the server was launched with. A client cannot read a
+            # server's flags, and the two production engines report them only when they
+            # answer /get_server_info (recorded under `server` below); the arm name is the
+            # operator's declaration, and writing it down is what makes an fp8 row
+            # distinguishable from a bf16 one months later.
+            "quantization": "fp8" if quantized else "none",
+            "kv_cache_dtype": FP8_KV_CACHE_DTYPE[engine] if quantized else "auto",
+        }
         if server:
             block["server"] = dict(server)
         return block

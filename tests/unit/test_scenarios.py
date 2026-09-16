@@ -524,6 +524,30 @@ def test_naive_vs_cb_labels_both_production_engines_from_the_shared_mapping() ->
     assert set(REMOTE_ENGINE_LABELS) <= set(naive_vs_cb.ARM_LABELS)
 
 
+def test_every_production_engine_gets_an_fp8_arm_derived_from_its_name() -> None:
+    """The fp8 arms are derived, so a third engine would get one without another edit."""
+    for engine, label in REMOTE_ENGINE_LABELS.items():
+        arm = f"{engine}{naive_vs_cb.FP8_SUFFIX}"
+        assert naive_vs_cb.ARM_LABELS[arm] == f"{label} (fp8)"
+        assert naive_vs_cb.engine_of(arm) == engine
+        # Each engine spells the KV dtype its own way, and the wrong one is a flag the
+        # server rejects at startup rather than a difference a reader would notice.
+        assert naive_vs_cb.FP8_KV_CACHE_DTYPE[engine]
+    assert naive_vs_cb.engine_of("reference") == "reference"
+
+
+def test_an_fp8_arm_is_compared_against_its_own_bf16_twin() -> None:
+    """Against `naive` the ratio would be an engine difference times a format difference."""
+    assert naive_vs_cb.extra_comparisons("vllm_fp8", with_static=True) == [
+        naive_vs_cb.ARM_LABELS["static_batch"],
+        naive_vs_cb.ARM_LABELS["vllm"],
+    ]
+    assert naive_vs_cb.extra_comparisons("reference", with_static=True) == [
+        naive_vs_cb.ARM_LABELS["static_batch"]
+    ]
+    assert naive_vs_cb.extra_comparisons("static_batch", with_static=False) == []
+
+
 @pytest.mark.parametrize("engine", ["vllm", "sglang"])
 def test_naive_vs_cb_needs_a_url_for_a_remote_engine_arm(
     tiny_profile: BenchProfile, tmp_path: Path, engine: str
@@ -605,8 +629,46 @@ def test_naive_vs_cb_records_which_engine_served_a_remote_arm(
         "kind": "openai",
         "engine": "sglang",
         "url": mock_server,
+        # A bf16 arm says so explicitly rather than leaving the field out: "no quantization"
+        # and "nobody recorded it" are different facts about a result file.
+        "quantization": "none",
+        "kv_cache_dtype": "auto",
     }
     assert payload["summary"]["num_requests"] == 2
+
+
+@pytest.mark.timeout(120)
+def test_naive_vs_cb_records_the_numeric_format_of_an_fp8_arm(
+    tiny_profile: BenchProfile, mock_server: str, tmp_path: Path
+) -> None:
+    """The fp8 arm is the same client against the same URL; the file is where it differs.
+
+    A numeric format is decided when the server loads its weights, so nothing about the
+    request says which one answered. The arm's own name is the operator's declaration, and
+    this is the test that it reaches the result file -- with SGLang's spelling of the KV
+    dtype, not vLLM's.
+    """
+    profile = _with_backends(tiny_profile, "naive_vs_cb", ["sglang_fp8"])
+    outcomes = asyncio.run(
+        naive_vs_cb.run_scenario(
+            profile,
+            arms=["sglang_fp8"],
+            url=mock_server,
+            options=_tiny_engine_options(),
+            results_dir=tmp_path / "results",
+            warmup=0,
+        )
+    )
+    assert [(o.backend, o.label) for o in outcomes] == [("sglang_fp8", "SGLang (fp8)")]
+    payload = _loaded(outcomes[0].path)
+    assert payload["config"]["engine"] == {
+        "kind": "openai",
+        # The engine, not the arm: `sglang_fp8` is SGLang at a different numeric format.
+        "engine": "sglang",
+        "url": mock_server,
+        "quantization": "fp8",
+        "kv_cache_dtype": "fp8_e5m2",
+    }
 
 
 @pytest.mark.timeout(120)
