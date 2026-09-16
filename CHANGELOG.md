@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.0] - 2026-09-16
 
 ### Added
 
@@ -348,4 +348,4 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `config`, `mock` or a base URL and there is no `--engine-url`, so the documented command
   exited 2; `deploy/sglang/README.md` had it right and the vLLM side now matches.
 
-[Unreleased]: https://github.com/sripadha/turboserve/commits/main
+[0.1.0]: https://github.com/sripadha/turboserve/releases/tag/v0.1.0
