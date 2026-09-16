@@ -73,6 +73,7 @@ from typing import TYPE_CHECKING, Any
 from turboserve.bench.loadgen import load_config
 from turboserve.bench.records import Percentiles, RequestRecord, RunResult, percentile
 from turboserve.bench.scenarios.common import build_load_spec, build_prompt_pool
+from turboserve.bench.scenarios.naive_vs_cb import FP8_KV_CACHE_DTYPE, FP8_SUFFIX, engine_of
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Iterable, Sequence
@@ -197,6 +198,10 @@ SOFTWARE = {
 #: scenarios record only the URL they were pointed at, because a client cannot see a
 #: server's flags; a projection can and must say what it assumed.
 VLLM_URL = "http://127.0.0.1:8000/v1"
+#: The FP8 arm's server. A numeric format is decided when the weights load, so it is a
+#: second server on a second port rather than a flag on a request -- the ports
+#: docs/vastai.md starts them on.
+VLLM_FP8_URL = "http://127.0.0.1:8002/v1"
 VLLM_SERVER = {
     "version": "0.11.0",
     "args": [
@@ -222,6 +227,7 @@ def vllm_server(*args: str) -> dict[str, Any]:
 #: ``OpenAICompatBackend.server_info()`` asks ``/version`` and ``/get_server_info``.
 SGLANG_VERSION = "0.5.3"
 SGLANG_URL = "http://127.0.0.1:30000/v1"
+SGLANG_FP8_URL = "http://127.0.0.1:30002/v1"
 SGLANG_BASELINE_URL = "http://127.0.0.1:30001/v1"
 SGLANG_ARGS = [
     "--model-path Qwen/Qwen2.5-7B-Instruct",
@@ -729,37 +735,153 @@ def baseline_counters(
 #   "within 3%" that the same two engines show at matched offered load in an open loop. The
 #   throughput and the TPOT columns are two views of one number here, and making them
 #   disagree would mean fabricating records that do not add up.
+#
+# * The FP8 arms -- `vLLM (fp8)` and `SGLang (fp8)` -- are each engine serving the same
+#   checkpoint as W8A8-FP8 with an FP8 KV cache, the launch option deploy/*/launch.sh takes
+#   as QUANT=fp8 and the chart as engine.quantization=fp8. The anchor for Qwen2.5-7B on one
+#   H100 is an output-token rate 28-32% above the same engine's bf16 arm at concurrency 128,
+#   22-26% at 64 and 10-14% at 32, with time to first token 8-12% lower at both the median
+#   and the tail. This projection takes the middle of each band (+30%, +24%, +12%; TTFT
+#   x0.90), and it takes them as *factors on that engine's own bf16 arm* rather than as
+#   absolute rates, so the ratio a reader sees in the rendered table is the ratio stated
+#   here and a change to a bf16 anchor cannot leave its fp8 twin behind.
+#
+#   Why the gain grows with load is the whole of the mechanism, and it is the reason a
+#   single "fp8 is N% faster" figure would be wrong. Two things halve: the weight bytes a
+#   decode step reads (about 15 GiB to about 7.6) and the KV bytes a resident token holds
+#   (57344 to 28672). At concurrency 32 the batch is small, each step is dominated by the
+#   weight read, and halving it is worth something but the server is nowhere near the
+#   allocator's ceiling. At 128 the KV pool is what decides how many sequences stay resident,
+#   so halving a token's KV cost keeps a fuller batch running and the weight saving is
+#   amortised over more tokens per step; both effects push the same way, which is why the
+#   band is widest there.
+#
+#   The same closed-loop identity that governs the SGLang arms above governs these: at a
+#   fixed concurrency a higher aggregate rate *is* a proportionally shorter mean inter-token
+#   gap, so TPOT falls by the reciprocal of the throughput factor and the cost per million
+#   output tokens falls with it. Those columns are not separate claims; they are the same
+#   number seen from three sides, and summarize() computes all three from the records.
+#
+#   What is *not* claimed: nothing here measures accuracy. FP8 changes the numbers the model
+#   computes, and this repository has no evaluation harness, so the arms are stated as
+#   throughput, latency and cost only -- the honest scope, and the reason docs/engine.md
+#   says the reference engine stays bf16/fp16 rather than growing a quantized path to match.
 # ---------------------------------------------------------------------------------------
 
-NAIVE_VS_CB_ARMS: dict[int, dict[str, Arm]] = {
-    32: {
-        "naive_hf": Arm("naive", "naive_hf", 32, 34.5, 0.0, 0.0),
-        "static_batch": Arm("static batch", "static_batch", 32, 329.0, 0.0, 0.0),
-        "reference": Arm("continuous batching", "reference", 32, 840.0, 108.0, 270.0),
-        "vllm": Arm("vLLM", "vllm", 32, 1400.0, 80.0, 200.0),
-        "sglang": Arm("SGLang", "sglang", 32, 1456.0, 73.6, 184.0),
-    },
-    64: {
-        "naive_hf": Arm("naive", "naive_hf", 64, 34.5, 0.0, 0.0),
-        "static_batch": Arm("static batch", "static_batch", 64, 523.0, 0.0, 0.0),
-        "reference": Arm("continuous batching", "reference", 64, 1620.0, 189.0, 432.0),
-        "vllm": Arm("vLLM", "vllm", 64, 2700.0, 140.0, 320.0),
-        "sglang": Arm("SGLang", "sglang", 64, 2835.0, 126.0, 288.0),
-    },
-    128: {
-        "naive_hf": Arm("naive", "naive_hf", 128, 34.5, 0.0, 0.0),
-        "static_batch": Arm("static batch", "static_batch", 128, 745.0, 0.0, 0.0),
-        "reference": Arm("continuous batching", "reference", 128, 1980.0, 351.0, 608.0),
-        "vllm": Arm("vLLM", "vllm", 128, 3300.0, 260.0, 450.0),
-        "sglang": Arm("SGLang", "sglang", 128, 3531.0, 228.8, 396.0),
-    },
-}
+#: Output-token rate of an FP8 arm as a factor of the same engine's bf16 arm, per
+#: concurrency. The middle of each anchored band above.
+FP8_THROUGHPUT_GAIN: dict[int, float] = {32: 1.12, 64: 1.24, 128: 1.30}
+
+#: Time to first token of an FP8 arm as a factor of the same engine's bf16 arm, at the
+#: median and at the tail alike. Prefill is compute bound and FP8 matmuls are what it gains;
+#: the 8-12% band is narrow and flat across load because a prefill's cost does not depend on
+#: how full the KV pool is.
+FP8_TTFT_FACTOR = 0.90
+
+#: The engines that get an FP8 arm, in the order their rows are written.
+FP8_ENGINES: tuple[str, ...] = ("vllm", "sglang")
+
+
+def _fp8_arm(base: Arm) -> Arm:
+    """The FP8 twin of one bf16 production arm, at the same concurrency.
+
+    Derived rather than stated: every figure is the base arm's multiplied by the factors
+    above, so the rendered ratio between the two rows is exactly the anchor this file
+    documents and neither row can drift from the other.
+    """
+    gain = FP8_THROUGHPUT_GAIN[base.concurrency]
+    return Arm(
+        label=f"{base.label} (fp8)",
+        backend=f"{base.backend}{FP8_SUFFIX}",
+        concurrency=base.concurrency,
+        output_tok_s=round(base.output_tok_s * gain, 1),
+        ttft_p50_ms=round(base.ttft_p50_ms * FP8_TTFT_FACTOR, 1),
+        ttft_p95_ms=round(base.ttft_p95_ms * FP8_TTFT_FACTOR, 1),
+        note=f"fp8 twin of {base.backend} at x{gain:g} output tok/s",
+    )
+
+
+def _with_fp8_arms(arms: dict[int, dict[str, Arm]]) -> dict[int, dict[str, Arm]]:
+    """Add one FP8 arm per production engine to every load level."""
+    return {
+        level: {
+            **by_name,
+            **{f"{name}{FP8_SUFFIX}": _fp8_arm(by_name[name]) for name in FP8_ENGINES},
+        }
+        for level, by_name in arms.items()
+    }
+
+
+NAIVE_VS_CB_ARMS: dict[int, dict[str, Arm]] = _with_fp8_arms(
+    {
+        32: {
+            "naive_hf": Arm("naive", "naive_hf", 32, 34.5, 0.0, 0.0),
+            "static_batch": Arm("static batch", "static_batch", 32, 329.0, 0.0, 0.0),
+            "reference": Arm("continuous batching", "reference", 32, 840.0, 108.0, 270.0),
+            "vllm": Arm("vLLM", "vllm", 32, 1400.0, 80.0, 200.0),
+            "sglang": Arm("SGLang", "sglang", 32, 1456.0, 73.6, 184.0),
+        },
+        64: {
+            "naive_hf": Arm("naive", "naive_hf", 64, 34.5, 0.0, 0.0),
+            "static_batch": Arm("static batch", "static_batch", 64, 523.0, 0.0, 0.0),
+            "reference": Arm("continuous batching", "reference", 64, 1620.0, 189.0, 432.0),
+            "vllm": Arm("vLLM", "vllm", 64, 2700.0, 140.0, 320.0),
+            "sglang": Arm("SGLang", "sglang", 64, 2835.0, 126.0, 288.0),
+        },
+        128: {
+            "naive_hf": Arm("naive", "naive_hf", 128, 34.5, 0.0, 0.0),
+            "static_batch": Arm("static batch", "static_batch", 128, 745.0, 0.0, 0.0),
+            "reference": Arm("continuous batching", "reference", 128, 1980.0, 351.0, 608.0),
+            "vllm": Arm("vLLM", "vllm", 128, 3300.0, 260.0, 450.0),
+            "sglang": Arm("SGLang", "sglang", 128, 3531.0, 228.8, 396.0),
+        },
+    }
+)
+
+
+def remote_engine_block(arm: str) -> dict[str, Any]:
+    """The ``config["engine"]`` block of one production-engine arm of ``naive_vs_cb``.
+
+    A remote arm records which engine served it as well as where it was -- the URL says
+    neither, and two production engines at two numeric formats write into this directory --
+    plus the numeric format itself, which no client can observe and which is the only
+    difference between the ``vllm`` and ``vllm_fp8`` rows.
+
+    Every server here is launched with its prefix cache off, because this scenario measures
+    batching and the prompt pool is reused across the concurrency sweep. The flag that says
+    so is not the same one negated on the two engines, which is why the two branches build
+    their argument lists separately rather than sharing one with a boolean.
+    """
+    quantized = arm.endswith(FP8_SUFFIX)
+    engine = engine_of(arm)
+    kv_cache_dtype = FP8_KV_CACHE_DTYPE[engine] if quantized else "auto"
+    # One string per flag-and-value pair, the shape the rest of this record uses.
+    flags = ["--quantization fp8", f"--kv-cache-dtype {kv_cache_dtype}"] if quantized else []
+    if engine == "sglang":
+        url = SGLANG_FP8_URL if quantized else SGLANG_URL
+        server = sglang_server("--disable-radix-cache", *flags)
+    else:
+        url = VLLM_FP8_URL if quantized else VLLM_URL
+        server = vllm_server("--no-enable-prefix-caching", *flags)
+    return {
+        "kind": "openai",
+        "engine": engine,
+        "url": url,
+        "quantization": "fp8" if quantized else "none",
+        "kv_cache_dtype": kv_cache_dtype,
+        "server": server,
+    }
 
 
 def build_naive_vs_cb(session: Session, profile: Any) -> None:
     """Five arms at three load levels: what batching is worth, and where each engine lands."""
     from turboserve.bench.scenarios.common import result_path
-    from turboserve.bench.scenarios.naive_vs_cb import ARM_LABELS, SCENARIO, SECONDARY_ARM
+    from turboserve.bench.scenarios.naive_vs_cb import (
+        ARM_LABELS,
+        SCENARIO,
+        SECONDARY_ARM,
+        extra_comparisons,
+    )
 
     work = profile.scenarios.naive_vs_cb
     uniform_output = (work.output_tokens.min + work.output_tokens.max + 1) // 2
@@ -829,24 +951,7 @@ def build_naive_vs_cb(session: Session, profile: Any) -> None:
             else:
                 records = stream_records(measured, arm, draws, output_tokens=counts)
                 counters = {}
-                # A remote arm records which engine served it as well as where it was: the
-                # URL says neither, and two production engines write into this directory.
-                # Both servers are launched with their prefix cache off, because this
-                # scenario measures batching and the pool is reused across the sweep.
-                if name == "sglang":
-                    engine = {
-                        "kind": "openai",
-                        "engine": name,
-                        "url": SGLANG_URL,
-                        "server": sglang_server("--disable-radix-cache"),
-                    }
-                else:
-                    engine = {
-                        "kind": "openai",
-                        "engine": name,
-                        "url": VLLM_URL,
-                        "server": vllm_server("--no-enable-prefix-caching"),
-                    }
+                engine = remote_engine_block(name)
             config: dict[str, Any] = {
                 **profile.config_for(SCENARIO),
                 "model": work.model,
@@ -857,8 +962,9 @@ def build_naive_vs_cb(session: Session, profile: Any) -> None:
                 "baseline_label": ARM_LABELS["naive_hf"],
                 "load": load_block(concurrency=level, backend=name, seed=profile.seed),
             }
-            if name != SECONDARY_ARM:
-                config["compare_to"] = [ARM_LABELS[SECONDARY_ARM]]
+            comparisons = extra_comparisons(name, with_static=name != SECONDARY_ARM)
+            if comparisons:
+                config["compare_to"] = comparisons
             derived = {
                 **counters,
                 "max_in_flight_observed": level,

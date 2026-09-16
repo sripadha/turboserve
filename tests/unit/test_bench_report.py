@@ -337,6 +337,39 @@ def test_render_scenario_plots_writes_what_it_can(tmp_path: Path) -> None:
     }
 
 
+#: The two charts the project README embeds, as (scenario, plot suffix). Their paths are a
+#: function of the scenario name, which is what makes a relative link to one of them safe to
+#: put on a page nobody re-renders.
+README_PLOTS: tuple[tuple[str, str], ...] = (
+    ("naive_vs_cb", "output-tok-s"),
+    ("prefix_cache", "ttft"),
+)
+
+
+@pytest.mark.parametrize(("scenario", "suffix"), README_PLOTS)
+def test_the_readme_embeds_plots_the_renderer_keeps_writing(
+    scenario: str, suffix: str, tmp_path: Path
+) -> None:
+    """The README's two charts must survive every re-render.
+
+    Three things have to agree and none of them is checked anywhere else: the README links a
+    path, ``render_scenario_plots`` writes that exact name for that scenario, and the file is
+    in the repository right now. A renamed plot would otherwise show up as two broken images
+    on the front page and nowhere in the test suite.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    link = f"results/plots/{scenario}-{suffix}.png"
+    assert f"]({link})" in (repo_root / "README.md").read_text(encoding="utf-8")
+    assert (repo_root / link).is_file(), f"{link} is linked but not committed"
+
+    runs = [
+        make_run(scenario, "a", concurrency=32, ttft_ms=10.0),
+        make_run(scenario, "b", concurrency=64, ttft_ms=20.0),
+    ]
+    written = {path.name for path in render_scenario_plots(scenario, runs, tmp_path)}
+    assert f"{scenario}-{suffix}.png" in written
+
+
 # -- CLI ----------------------------------------------------------------------------------
 
 
