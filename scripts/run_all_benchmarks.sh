@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+#
+# Run the whole benchmark suite and render the results pages.
+#
+# This is the script `make bench` and `scripts/vastai/run_remote.sh` call on the
+# measurement host. It is deliberately a thin sequence of `turboserve bench ...`
+# invocations rather than a second harness: every decision about what a scenario measures
+# lives in the scenario module, and the only thing here is the order and which optional
+# arms are available on this machine.
+#
+# Environment:
+#   PROFILE              workload profile from configs/bench/profiles.yaml (default h100)
+#   RESULTS_DIR          where result JSON is written (default results)
+#   VLLM_URL             OpenAI-compatible vLLM server; enables every `vllm` arm
+#   VLLM_BASELINE_URL    a second vLLM server started WITHOUT --enable-prefix-caching,
+#                        used as the prefix-cache scenario's control arm
+#   TURBOSERVE           how to invoke the CLI (default: uv run --frozen turboserve)
+#   SKIP                 space-separated scenario names to skip, e.g. "spec-decode chaos"
+#   EXTRA_<SCENARIO>     extra flags for one scenario, e.g. EXTRA_CHAOS="--mode inprocess"
+#   DRY_RUN=1            print the commands instead of running them
+#   CONTINUE_ON_ERROR=1  keep going when one scenario fails (the failure is still reported)
+#
+# Prices: scripts/vastai/run_remote.sh exports TURBOSERVE_GPU_PRICE_PER_HOUR and
+# TURBOSERVE_GPU_PRICE_SOURCE; the scenarios read them into every result file, which is
+# what makes a cost column possible. Nothing here invents a price.
+
+set -Eeuo pipefail
+
+PROFILE="${PROFILE:-h100}"
+RESULTS_DIR="${RESULTS_DIR:-results}"
+VLLM_URL="${VLLM_URL:-}"
+VLLM_BASELINE_URL="${VLLM_BASELINE_URL:-}"
+TURBOSERVE="${TURBOSERVE:-uv run --frozen turboserve}"
+SKIP="${SKIP:-}"
+DRY_RUN="${DRY_RUN:-0}"
+CONTINUE_ON_ERROR="${CONTINUE_ON_ERROR:-0}"
+
+REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${REPO_ROOT}"
+
+FAILED=()
+STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+log() { printf '[run_all_benchmarks] %s\n' "$*" >&2; }
+
+is_skipped() {
+  local name="$1" entry
+  for entry in ${SKIP}; do
+    [[ "${entry}" == "${name}" ]] && return 0
+  done
+  return 1
+}
+
+# Extra flags for one scenario, from EXTRA_NAIVE_VS_CB / EXTRA_PREFIX_CACHE / ...
+extra_flags() {
+  local name="${1//-/_}"
+  local var="EXTRA_${name^^}"
+  printf '%s' "${!var:-}"
+}
+
+# True when the CLI advertises a subcommand. `spec-decode` and `multi-lora` are owned by
+# the engine's speculative and LoRA module groups and are registered only when present,
+# so the suite asks rather than assumes.
+has_command() {
+  ${TURBOSERVE} bench --help 2>/dev/null | grep -q -- "$1"
+}
+
+run_step() {
+  local name="$1"
+  shift
+  if is_skipped "${name}"; then
+    log "skipping ${name} (SKIP)"
+    return 0
+  fi
+  log "==> ${name}: $*"
+  if [[ "${DRY_RUN}" == "1" ]]; then
+    return 0
+  fi
+  if "$@"; then
+    return 0
+  fi
+  log "!!! ${name} failed"
+  FAILED+=("${name}")
+  if [[ "${CONTINUE_ON_ERROR}" == "1" ]]; then
+    return 0
+  fi
+  return 1
+}
+
+log "profile=${PROFILE} results=${RESULTS_DIR} vllm_url=${VLLM_URL:-<none>}"
+log "started ${STARTED_AT}"
+
+# ---------------------------------------------------------------------------------------
+# 1. batching: sequential vs static batch vs continuous batching, then the same against
+#    vLLM when a server is reachable.
+# ---------------------------------------------------------------------------------------
+# shellcheck disable=SC2046  # word splitting of extra_flags is intended
+run_step naive-vs-cb ${TURBOSERVE} bench naive-vs-cb \
+  --profile "${PROFILE}" --results-dir "${RESULTS_DIR}" \
+  --arm naive_hf --arm static_batch --arm reference $(extra_flags naive-vs-cb)
+
+if [[ -n "${VLLM_URL}" ]]; then
+  # shellcheck disable=SC2046
+  run_step naive-vs-cb-vllm ${TURBOSERVE} bench naive-vs-cb \
+    --profile "${PROFILE}" --results-dir "${RESULTS_DIR}" \
+    --arm vllm --url "${VLLM_URL}" $(extra_flags naive-vs-cb)
+else
+  log "no VLLM_URL: skipping the vLLM arm of naive-vs-cb"
+fi
+
+# ---------------------------------------------------------------------------------------
+# 2. prefix cache off vs on. On vLLM the cache is a launch flag, so the control arm needs
+#    its own server (VLLM_BASELINE_URL) rather than a different request.
+# ---------------------------------------------------------------------------------------
+PREFIX_ARGS=()
+[[ -n "${VLLM_URL}" ]] && PREFIX_ARGS+=(--url "${VLLM_URL}")
+[[ -n "${VLLM_BASELINE_URL}" ]] && PREFIX_ARGS+=(--baseline-url "${VLLM_BASELINE_URL}")
+# shellcheck disable=SC2046
+run_step prefix-cache ${TURBOSERVE} bench prefix-cache \
+  --profile "${PROFILE}" --results-dir "${RESULTS_DIR}" \
+  "${PREFIX_ARGS[@]+"${PREFIX_ARGS[@]}"}" $(extra_flags prefix-cache)
+
+# ---------------------------------------------------------------------------------------
+# 3 and 4. speculative decoding and multi-adapter serving, when those scenarios are part
+#    of this installation.
+# ---------------------------------------------------------------------------------------
+for optional in spec-decode multi-lora; do
+  if ! has_command "${optional}"; then
+    log "turboserve bench has no ${optional} command in this build; skipping"
+    continue
+  fi
+  OPTIONAL_ARGS=()
+  [[ -n "${VLLM_URL}" ]] && OPTIONAL_ARGS+=(--url "${VLLM_URL}")
+  # shellcheck disable=SC2046
+  run_step "${optional}" ${TURBOSERVE} bench "${optional}" \
+    --profile "${PROFILE}" --results-dir "${RESULTS_DIR}" \
+    "${OPTIONAL_ARGS[@]+"${OPTIONAL_ARGS[@]}"}" $(extra_flags "${optional}")
+done
+
+# ---------------------------------------------------------------------------------------
+# 5. chaos: steady offered load through a replica fleet that is being killed.
+# ---------------------------------------------------------------------------------------
+# shellcheck disable=SC2046
+run_step chaos ${TURBOSERVE} bench chaos \
+  --profile "${PROFILE}" --results-dir "${RESULTS_DIR}" $(extra_flags chaos)
+
+# ---------------------------------------------------------------------------------------
+# 6. render every result file into the tables, the plots and docs/results.md. This is the
+#    only step that produces a number a human reads, and it reads them all from JSON.
+# ---------------------------------------------------------------------------------------
+run_step render ${TURBOSERVE} bench render --results-dir "${RESULTS_DIR}"
+
+if ((${#FAILED[@]})); then
+  log "finished with failures: ${FAILED[*]}"
+  exit 1
+fi
+log "finished: every scenario completed; see ${RESULTS_DIR}/README.md"

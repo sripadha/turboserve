@@ -1,0 +1,155 @@
+# Workload sizes for every benchmark scenario, per machine.
+#
+# A profile answers one question: "how big is the run on this hardware?" It names the
+# models, how many requests to send, how long the prompts and completions are, at which
+# concurrencies, and the scenario-specific knobs (shared prefix length, speculative k,
+# adapter count). It deliberately holds no latency or throughput objective: goodput is
+# computed against an objective passed on the command line, so the repository never states
+# a figure it has not measured.
+#
+# `h100` is the published profile (1x NVIDIA H100 80GB, bf16). `dev-2060` is the same suite
+# shrunk to a 6 GB Turing laptop GPU (fp16 only, no bf16 tensor cores); it exists to prove
+# the pipeline end to end and its output is never published as a result.
+#
+# Parsed and validated by src/turboserve/bench/profiles.py; unknown keys are an error.
+
+schema_version: 1
+
+profiles:
+  h100:
+    description: 1x NVIDIA H100 80GB SXM, bf16 -- the published measurement target.
+    device: cuda
+    seed: 20260916
+    tenants: [tenant-a, tenant-b, tenant-c]
+    scenarios:
+      naive_vs_cb:
+        model: Qwen/Qwen2.5-7B-Instruct
+        dtype: bfloat16
+        num_requests: 256
+        input_tokens: {min: 128, max: 1024}
+        output_tokens: {min: 64, max: 512}
+        concurrencies: [32, 64, 128]
+        backends: [naive_hf, static_batch, reference, vllm]
+
+      prefix_cache:
+        model: Qwen/Qwen2.5-7B-Instruct
+        dtype: bfloat16
+        num_requests: 128
+        shared_prefix_tokens: 1024
+        input_tokens: {min: 1152, max: 1536}
+        output_tokens: {min: 64, max: 128}
+        concurrency: 32
+        prefix_caching: [false, true]
+        backends: [reference, vllm]
+
+      spec_decode:
+        dtype: bfloat16
+        num_requests: 128
+        input_tokens: {min: 256, max: 512}
+        output_tokens: {min: 128, max: 256}
+        concurrencies: [1, 4, 16]
+        speculative_tokens: [2, 4, 6]
+        backends: [reference, vllm]
+        pairs:
+          - name: target-3b-draft-1.5b
+            target: Qwen/Qwen2.5-3B-Instruct
+            draft: Qwen/Qwen2.5-1.5B-Instruct
+            drafter: model
+          - name: target-7b-draft-0.5b
+            target: Qwen/Qwen2.5-7B-Instruct
+            draft: Qwen/Qwen2.5-0.5B-Instruct
+            drafter: model
+          - name: target-7b-ngram
+            target: Qwen/Qwen2.5-7B-Instruct
+            draft: null
+            drafter: ngram
+
+      multi_lora:
+        model: Qwen/Qwen2.5-7B-Instruct
+        dtype: bfloat16
+        num_requests: 256
+        input_tokens: {min: 128, max: 512}
+        output_tokens: {min: 64, max: 256}
+        adapter_counts: [10, 32, 100, 128]
+        lora_rank: 16
+        concurrency: 64
+        include_base_only: true
+        backends: [reference, vllm]
+
+      chaos:
+        model: Qwen/Qwen2.5-7B-Instruct
+        dtype: bfloat16
+        input_tokens: {min: 128, max: 512}
+        output_tokens: {min: 64, max: 128}
+        num_workers: 3
+        rate_rps: 20.0
+        duration_s: 60.0
+        fault_interval_s: 10.0
+        backends: [reference]
+
+  dev-2060:
+    description: NVIDIA RTX 2060 6GB (Turing, fp16 only) -- smoke profile, never published.
+    device: cuda
+    seed: 20260916
+    tenants: [tenant-a, tenant-b]
+    scenarios:
+      naive_vs_cb:
+        model: Qwen/Qwen2.5-0.5B-Instruct
+        dtype: float16
+        num_requests: 64
+        input_tokens: {min: 128, max: 512}
+        output_tokens: {min: 32, max: 128}
+        concurrencies: [32]
+        backends: [naive_hf, static_batch, reference]
+
+      prefix_cache:
+        model: Qwen/Qwen2.5-0.5B-Instruct
+        dtype: float16
+        num_requests: 32
+        shared_prefix_tokens: 512
+        input_tokens: {min: 640, max: 768}
+        output_tokens: {min: 32, max: 64}
+        concurrency: 8
+        prefix_caching: [false, true]
+        backends: [reference]
+
+      spec_decode:
+        dtype: float16
+        num_requests: 32
+        input_tokens: {min: 128, max: 256}
+        output_tokens: {min: 64, max: 128}
+        concurrencies: [1, 4]
+        speculative_tokens: [2, 4]
+        backends: [reference]
+        pairs:
+          - name: target-1.5b-draft-0.5b
+            target: Qwen/Qwen2.5-1.5B-Instruct
+            draft: Qwen/Qwen2.5-0.5B-Instruct
+            drafter: model
+          - name: target-1.5b-ngram
+            target: Qwen/Qwen2.5-1.5B-Instruct
+            draft: null
+            drafter: ngram
+
+      multi_lora:
+        model: Qwen/Qwen2.5-0.5B-Instruct
+        dtype: float16
+        num_requests: 64
+        input_tokens: {min: 128, max: 256}
+        output_tokens: {min: 32, max: 64}
+        adapter_counts: [16, 64]
+        lora_rank: 16
+        concurrency: 16
+        include_base_only: true
+        backends: [reference]
+
+      chaos:
+        model: Qwen/Qwen2.5-0.5B-Instruct
+        dtype: float16
+        input_tokens: {min: 64, max: 128}
+        output_tokens: {min: 16, max: 32}
+        num_workers: 3
+        rate_rps: 4.0
+        duration_s: 30.0
+        fault_interval_s: 10.0
+        backends: [reference]
