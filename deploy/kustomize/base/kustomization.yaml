@@ -1,0 +1,49 @@
+# Plain-YAML deployment of the gateway, for people who do not run Helm.
+#
+# The Helm chart is the full-featured path (lanes, HPA, monitoring CRDs, vLLM engine,
+# adapter sync). This base is deliberately the smaller thing: one gateway Deployment, its
+# Service, its fleet data and a PodDisruptionBudget -- the objects you cannot run without.
+# Overlays add what a particular cluster needs:
+#
+#   overlays/kind-cpu  a local kind cluster, mock engine, NodePort, no GPU
+#   overlays/gpu       a GPU node pool with a separate vLLM engine Deployment
+#
+# The two generators below are the reason this is a kustomization and not a directory of
+# manifests: kustomize hashes the contents of tenants.yaml/models.yaml into the object
+# names and rewrites every reference, so editing a quota rolls the pods instead of leaving
+# them serving a file that no longer exists on disk.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - serviceaccount.yaml
+  - gateway-deployment.yaml
+  - gateway-service.yaml
+  - gateway-pdb.yaml
+
+labels:
+  - includeSelectors: true
+    pairs:
+      app.kubernetes.io/name: turboserve
+      app.kubernetes.io/instance: turboserve
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/part-of: turboserve
+      app.kubernetes.io/managed-by: kustomize
+
+configMapGenerator:
+  - name: turboserve-models
+    files:
+      - models.yaml
+
+secretGenerator:
+  - name: turboserve-tenants
+    files:
+      - tenants.yaml
+    type: Opaque
+
+images:
+  - name: turboserve-gateway
+    newName: ghcr.io/sripadha/turboserve-gateway
+    newTag: 0.1.0

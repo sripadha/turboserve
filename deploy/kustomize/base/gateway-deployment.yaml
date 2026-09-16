@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: turboserve-gateway
+  labels:
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: gateway
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: gateway
+        turboserve.io/lane: stable
+    spec:
+      serviceAccountName: turboserve
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          # Rewritten by the `images:` entry in kustomization.yaml.
+          image: turboserve-gateway
+          command: ["turboserve"]
+          # `--engine` takes `config`, `mock`, or the base URL of an OpenAI-compatible
+          # server -- see `turboserve gateway serve --help`. Host, port, tenants and models
+          # are flags rather than TURBOSERVE_* environment variables because `serve` builds
+          # its Settings with those four values explicitly and would override the env.
+          # overlays/gpu replaces `mock` with the vLLM Service URL.
+          args:
+            - gateway
+            - serve
+            - --engine
+            - mock
+            - --model
+            - Qwen/Qwen2.5-7B-Instruct
+            - --tenants
+            - /etc/turboserve/tenants/tenants.yaml
+            - --models
+            - /etc/turboserve/models/models.yaml
+            - --host
+            - "0.0.0.0"
+            - --port
+            - "8000"
+            - --require-auth
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          lifecycle:
+            preStop:
+              # Keep accepting for a few seconds after the pod goes Terminating, until
+              # every kube-proxy has removed it from the endpoint list.
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tenants
+              mountPath: /etc/turboserve/tenants
+              readOnly: true
+            - name: models
+              mountPath: /etc/turboserve/models
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tenants
+          secret:
+            secretName: turboserve-tenants
+        - name: models
+          configMap:
+            name: turboserve-models
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi

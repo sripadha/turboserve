@@ -1,0 +1,454 @@
+# Default values for the turboserve chart.
+#
+# The chart deploys one or two things, decided by `engine.mode`:
+#
+#   mock       gateway Deployment only. The mock backend lives inside the gateway process,
+#              needs no GPU and no model, and is what the kind end-to-end job and any
+#              smoke test of the Kubernetes objects themselves should use.
+#   reference  gateway Deployment only, but the gateway pod carries the from-scratch
+#              engine in-process, so it is the pod that gets the GPU, the model cache and
+#              the LoRA adapters volume.
+#   vllm       gateway Deployment (CPU) plus a separate engine Deployment running vLLM's
+#              OpenAI server. The gateway routes to it over the engine Service. This is
+#              the production path: two failure domains, independent scaling, and the
+#              engine image is upstream vLLM rather than anything built here.
+#
+# Every value below is consumed by a template in templates/; nothing here is decorative.
+
+# -- Override the generated resource name (default: "<release>-turboserve").
+nameOverride: ""
+fullnameOverride: ""
+
+# Extra labels/annotations put on every object the chart renders.
+commonLabels: {}
+commonAnnotations: {}
+
+image:
+  # The gateway image, built from Dockerfile.gateway at the repo root.
+  repository: ghcr.io/sripadha/turboserve-gateway
+  # Empty means "use .Chart.AppVersion". Pin a digest in production.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  # The gateway calls no Kubernetes API, so it needs no token mounted. `turboserve canary
+  # run --kube` drives rollouts from outside the pod (it shells out to kubectl with the
+  # operator's own credentials), which is why nothing here grants RBAC.
+  automountServiceAccountToken: false
+
+gateway:
+  # Total gateway replicas across both lanes. With `canary.enabled`, this number is split
+  # between the stable and canary Deployments (see canary.weight).
+  replicaCount: 2
+
+  command: ["turboserve"]
+  # Rendered by the `turboserve.gateway.args` helper:
+  #   gateway serve --engine <engine.mode> [--engine-url <engine service>] <extraArgs>
+  # Override `args` to take full control of the command line.
+  args: []
+  extraArgs: []
+
+  # false renders --no-require-auth, which makes the gateway serve every request as the
+  # `default` tenant. That is what the kind end-to-end job uses, because the thing under
+  # test there is pod lifecycle and a credential would only add a way for it to fail.
+  # Never false on anything reachable from outside the cluster.
+  requireAuth: true
+
+  logLevel: INFO
+
+  # Extra environment variables, as a plain map (name: value) or a list of EnvVar objects
+  # under `envFrom`/`extraEnv` for secret references.
+  env: {}
+  extraEnv: []
+  envFrom: []
+
+  service:
+    type: ClusterIP
+    port: 80
+    # Port the container listens on; also the scrape port.
+    targetPort: 8000
+    # Only honoured when type is NodePort (the kind overlay uses 30080).
+    nodePort: null
+    annotations: {}
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      # No CPU limit by default: throttling a gateway that is mostly waiting on sockets
+      # adds tail latency for nothing. Memory is limited because a leak should be killed.
+      memory: 2Gi
+
+  # Probes. /healthz is liveness (process is alive), /readyz is readiness (backends are
+  # reachable), so a gateway whose only backend is down is pulled from the Service instead
+  # of being restarted in a loop.
+  probes:
+    startup:
+      enabled: true
+      failureThreshold: 30
+      periodSeconds: 2
+    liveness:
+      enabled: true
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 2
+      failureThreshold: 3
+    readiness:
+      enabled: true
+      initialDelaySeconds: 2
+      periodSeconds: 5
+      timeoutSeconds: 2
+      failureThreshold: 3
+
+  # Streaming responses can run for minutes; the grace period has to outlast them or a
+  # rolling update shows up to clients as truncated streams. preStopSleep covers the gap
+  # between the pod going Terminating and kube-proxy removing it from the endpoint list:
+  # without it, connections keep arriving at a pod that has already begun shutting down,
+  # which is exactly the error the chaos job measures.
+  terminationGracePeriodSeconds: 60
+  preStopSleep: 5
+
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  # Spread replicas over nodes so that losing one node cannot take the lane down.
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: gateway
+
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
+
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    # Scales on the gateway's own queue depth. Requires a metrics adapter that serves
+    # `turboserve_queue_depth` as a Pods metric (prometheus-adapter, KEDA, ...); leave it
+    # off on a cluster that has none, or the HPA reports FailedGetPodsMetric and stops
+    # acting on CPU too.
+    queueDepth:
+      enabled: false
+      metricName: turboserve_queue_depth
+      averageValue: "8"
+    behavior:
+      scaleDown:
+        # Long window on the way down: LLM traffic is bursty and re-warming a gateway
+        # costs a cold TCP pool to every backend.
+        stabilizationWindowSeconds: 300
+      scaleUp:
+        stabilizationWindowSeconds: 30
+
+  pdb:
+    enabled: true
+    minAvailable: 1
+    maxUnavailable: null
+
+engine:
+  # mock | reference | vllm  (see the header of this file)
+  mode: mock
+
+  # Model served. In mock mode it is only the name reported by /v1/models.
+  model: Qwen/Qwen2.5-7B-Instruct
+
+  # --- separate vLLM Deployment (engine.mode == "vllm" only) -------------------------
+  replicaCount: 1
+  image:
+    repository: vllm/vllm-openai
+    tag: v0.11.0
+    pullPolicy: IfNotPresent
+  service:
+    port: 8000
+    annotations: {}
+
+  # vLLM server flags. Each maps to one command-line argument; see deploy/vllm/README.md
+  # for what each one buys and deploy/vllm/values-h100.yaml for a filled-in H100 profile.
+  vllm:
+    maxModelLen: 8192
+    gpuMemoryUtilization: 0.90
+    # Automatic prefix caching: reuse the KV blocks of a shared prompt prefix.
+    enablePrefixCaching: true
+    enableChunkedPrefill: true
+    maxNumSeqs: 256
+    maxNumBatchedTokens: 8192
+    tensorParallelSize: 1
+    dtype: auto
+    speculative:
+      enabled: false
+      # Draft model for speculative decoding, e.g. Qwen/Qwen2.5-0.5B-Instruct.
+      model: ""
+      numSpeculativeTokens: 4
+    lora:
+      enabled: false
+      maxLoras: 8
+      maxLoraRank: 16
+      # name=path pairs resolved inside the adapters volume.
+      modules: []
+    # Anything not modelled above, appended verbatim.
+    extraArgs: []
+
+  # API key vLLM requires on its own endpoint. Empty means no key; the NetworkPolicy
+  # below is then the only thing keeping the engine private.
+  apiKeySecret:
+    name: ""
+    key: api-key
+
+  resources:
+    limits:
+      nvidia.com/gpu: 1
+      memory: 64Gi
+    requests:
+      cpu: "4"
+      memory: 32Gi
+
+  nodeSelector: {}
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: NoSchedule
+  affinity: {}
+  podAnnotations: {}
+  podSecurityContext:
+    runAsNonRoot: false
+    fsGroup: 0
+  securityContext:
+    allowPrivilegeEscalation: false
+    # vLLM compiles kernels and writes a torch.compile cache at startup, so its root
+    # filesystem cannot be read-only.
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop: ["ALL"]
+
+  # Shared memory for torch's dataloader/NCCL. The default 64 MB /dev/shm in a container
+  # is too small for tensor parallelism.
+  shmSizeGi: 8
+
+  # Model cache. A PVC keeps a 15 GB download from being repeated on every pod restart.
+  modelCache:
+    enabled: false
+    existingClaim: ""
+    storageClass: ""
+    size: 100Gi
+    accessMode: ReadWriteOnce
+
+  # Hugging Face token for gated checkpoints, read from an existing Secret.
+  hfTokenSecret:
+    name: ""
+    key: token
+
+  # LoRA adapters, delivered on a volume and refreshed by an init container that syncs
+  # from an object store. The same volume is mounted into the gateway pod in `reference`
+  # mode, where the adapters are loaded by the in-process engine.
+  adapters:
+    enabled: false
+    mountPath: /adapters
+    persistence:
+      enabled: true
+      existingClaim: ""
+      storageClass: ""
+      size: 20Gi
+      accessMode: ReadWriteOnce
+    sync:
+      enabled: true
+      # Object-store prefix holding one directory per adapter. The default image and args
+      # speak S3; swap both for gsutil, rclone or a plain curl of a tarball.
+      sourceUrl: ""
+      image: amazon/aws-cli:2.32.6
+      command: ["aws"]
+      args: ["s3", "sync", "--no-progress", "$(ADAPTERS_SOURCE_URL)", "$(ADAPTERS_DIR)"]
+      env: []
+      envFrom: []
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+
+# --- fleet data ---------------------------------------------------------------------
+# tenants.yaml holds sha256 API-key hashes and quotas, so it is rendered into a Secret;
+# models.yaml holds model routing and the configured prices used for cost attribution and
+# goes into a ConfigMap. Point `existingSecret`/`existingConfigMap` at objects managed by
+# an external-secrets controller to keep them out of `helm get values`.
+tenants:
+  create: true
+  existingSecret: ""
+  key: tenants.yaml
+  mountPath: /etc/turboserve/tenants
+  # Rendered verbatim into the Secret, in the schema
+  # src/turboserve/gateway/tenants.py reads: a `version`, then a list of tenants whose API
+  # keys are stored as sha256 digests. The digests below are of the demo keys
+  # "turboserve-demo-key" and "turboserve-batch-key", published in docs/kubernetes.md
+  # because they guard nothing. Replace both before this gateway sees real traffic, and
+  # prefer tenants.existingSecret so they never appear in `helm get values`.
+  #
+  # Rotate a key without downtime by adding the new digest alongside the old one and
+  # removing the old one once clients have moved.
+  config: |
+    version: 1
+
+    tenants:
+      - id: demo
+        name: Demo tenant
+        keys_sha256:
+          - "c56d1f3e9e2ab4741984fc2bf5d020c76d58b549bfa2f78b634176e5eef23f53"
+        rpm: 600
+        tpm: 300000
+        max_concurrency: 32
+        priority: 0
+        weight: 1.0
+
+      - id: batch
+        name: Batch tenant
+        keys_sha256:
+          - "a36ec89ffce384dc584067bf0c56426654e05c0adb9a458435f6666ae5f1de6a"
+        rpm: 120
+        tpm: 60000
+        max_concurrency: 8
+        priority: -10
+        weight: 0.5
+
+      # Used when the gateway runs with gateway.requireAuth=false.
+      - id: default
+        name: default (auth disabled)
+        max_concurrency: 64
+
+models:
+  create: true
+  existingConfigMap: ""
+  key: models.yaml
+  mountPath: /etc/turboserve/models
+  # The pool definition the gateway routes on, in the schema
+  # src/turboserve/gateway/router.py reads. Each backend declares its lane, so the `lane`
+  # label on every metric -- and therefore the canary controller's comparison -- comes from
+  # here. `price` is a configured list price used only to attribute spend between tenants;
+  # it is not a measurement and nothing in docs/results.md is derived from it.
+  #
+  # This default is a mock pool, which needs no weights and no GPU. Its name matches
+  # `engine.model` on purpose: in `reference` and `vllm` mode the gateway serves the pools
+  # from this file, so a pool named anything else would leave `engine.model` unserved.
+  # Replace it (or set models.existingConfigMap) for a real deployment; deploy/vllm has a
+  # filled-in example.
+  config: |
+    version: 1
+
+    models:
+      - name: Qwen/Qwen2.5-7B-Instruct
+        backends:
+          - name: mock-a
+            backend: mock
+            lane: stable
+            weight: 1.0
+            options:
+              models: ["Qwen/Qwen2.5-7B-Instruct"]
+              max_tokens: 64
+
+# --- progressive delivery -------------------------------------------------------------
+canary:
+  # Renders a second gateway Deployment labelled lane=canary, a Service that selects only
+  # it, and splits `gateway.replicaCount` between the lanes. Without a mesh, a single
+  # ClusterIP Service spreads connections over ready endpoints, so the traffic share is
+  # approximately the replica share -- good enough to judge a canary, not a precise 1 %.
+  # For exact weights, enable argoRollouts below or put an Ingress controller that
+  # supports canary annotations in front.
+  enabled: false
+  weight: 25
+  image:
+    repository: ""
+    tag: ""
+  # Extra env for the canary lane only, e.g. a feature flag under test.
+  env: {}
+
+  argoRollouts:
+    # Renders an argoproj.io/v1alpha1 Rollout instead of the two Deployments. Requires the
+    # Argo Rollouts controller and its CRDs in the cluster.
+    enabled: false
+    steps:
+      - setWeight: 1
+      - pause: { duration: 5m }
+      - setWeight: 5
+      - pause: { duration: 5m }
+      - setWeight: 25
+      - pause: { duration: 10m }
+      - setWeight: 50
+      - pause: { duration: 10m }
+    # An AnalysisTemplate name that must already exist in the namespace; empty means the
+    # rollout advances on the pause durations alone.
+    analysisTemplate: ""
+
+# --- observability ---------------------------------------------------------------------
+monitoring:
+  serviceMonitor:
+    # Needs the Prometheus Operator CRDs.
+    enabled: false
+    interval: 15s
+    scrapeTimeout: 10s
+    # Extra labels so the operator's serviceMonitorSelector picks it up (kube-prometheus
+    # -stack commonly wants release: <its release name>).
+    labels: {}
+    relabelings: []
+    metricRelabelings: []
+  prometheusRule:
+    enabled: false
+    labels: {}
+    # Empty means "use deploy/prometheus/rules.yaml verbatim", which is the same file a
+    # standalone Prometheus loads. Set it to a list of rule groups to replace them.
+    groups: []
+  grafanaDashboard:
+    # Renders deploy/grafana/dashboards/turboserve.json as a ConfigMap for the Grafana
+    # sidecar to pick up.
+    enabled: false
+    labels:
+      grafana_dashboard: "1"
+    annotations: {}
+
+# --- networking -------------------------------------------------------------------------
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: turboserve.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+networkPolicy:
+  # Default-deny ingress to both components, then allow exactly: clients to the gateway,
+  # the monitoring namespace to the metrics port, and the gateway to the engine. Egress is
+  # left open except that it is written out explicitly, because the engine has to reach
+  # huggingface.co on a cold start.
+  enabled: false
+  # Namespaces/pods allowed to call the gateway. Empty means any pod in the cluster.
+  allowFrom: []
+  # Namespace label selector for Prometheus.
+  monitoringNamespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: monitoring
+  allowExternalEgress: true
+
+# Extra volumes/mounts for the gateway pod, for anything this chart does not model.
+extraVolumes: []
+extraVolumeMounts: []

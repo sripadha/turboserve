@@ -1,0 +1,32 @@
+{{/*
+A voluntary-disruption budget per lane. Node drains and cluster upgrades are the common
+case; without this, a drain can take every gateway replica at once and the outage looks
+exactly like the one the chaos job is designed to prove cannot happen.
+*/}}
+{{- if .Values.gateway.pdb.enabled }}
+{{- $lanes := list "stable" }}
+{{- if .Values.canary.enabled }}{{ $lanes = append $lanes "canary" }}{{ end }}
+{{- range $lane := $lanes }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ printf "%s-%s" (include "turboserve.gateway.fullname" $) $lane }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "turboserve.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: gateway
+    turboserve.io/lane: {{ $lane }}
+spec:
+  {{- if $.Values.gateway.pdb.maxUnavailable }}
+  maxUnavailable: {{ $.Values.gateway.pdb.maxUnavailable }}
+  {{- else }}
+  minAvailable: {{ $.Values.gateway.pdb.minAvailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "turboserve.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: gateway
+      turboserve.io/lane: {{ $lane }}
+{{- end }}
+{{- end }}

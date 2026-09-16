@@ -1,0 +1,57 @@
+{{/*
+Persistent volumes.
+
+adapters: one shared volume of LoRA adapter directories, written by the adapter-sync init
+container and read by whichever component holds the model. ReadWriteOnce by default
+because that is what every CSI driver supports; multi-replica engines need a ReadWriteMany
+class (set engine.adapters.persistence.accessMode), or an object-store sync per pod onto
+an emptyDir (persistence.enabled=false), which trades startup time for portability.
+
+models: the Hugging Face cache. A 15 GB checkpoint re-downloaded on every pod restart is
+minutes of unavailability and, on a metered egress link, real money.
+*/}}
+{{- if and .Values.engine.adapters.enabled .Values.engine.adapters.persistence.enabled (not .Values.engine.adapters.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ printf "%s-adapters" (include "turboserve.fullname" .) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "turboserve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: adapters
+  annotations:
+    # Keep the adapters when the release goes away: re-syncing them from the object store
+    # is slow, and a `helm uninstall` during an incident should not also delete them.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - {{ .Values.engine.adapters.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.engine.adapters.persistence.size }}
+  {{- with .Values.engine.adapters.persistence.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+{{- end }}
+{{- if and (include "turboserve.engine.standalone" .) .Values.engine.modelCache.enabled (not .Values.engine.modelCache.existingClaim) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ printf "%s-models" (include "turboserve.engine.fullname" .) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "turboserve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: engine
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - {{ .Values.engine.modelCache.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.engine.modelCache.size }}
+  {{- with .Values.engine.modelCache.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+{{- end }}

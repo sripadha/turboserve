@@ -1,0 +1,27 @@
+{{/*
+The Grafana dashboard, as a ConfigMap for the kube-prometheus-stack sidecar to import.
+
+The JSON is the same file deploy/grafana/dashboards/turboserve.json that docker-compose
+provisions, reached through a symlink under files/ so a panel fixed in one place is fixed
+in both. The default label (grafana_dashboard: "1") is the sidecar's default selector;
+change monitoring.grafanaDashboard.labels if the Grafana install uses another.
+*/}}
+{{- if .Values.monitoring.grafanaDashboard.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "%s-dashboard" (include "turboserve.fullname" .) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "turboserve.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.grafanaDashboard.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.monitoring.grafanaDashboard.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  turboserve.json: |
+    {{- .Files.Get "files/grafana-dashboard.json" | nindent 4 }}
+{{- end }}

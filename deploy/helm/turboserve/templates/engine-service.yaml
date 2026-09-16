@@ -1,0 +1,27 @@
+{{- if include "turboserve.engine.standalone" . }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "turboserve.engine.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "turboserve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: engine
+  {{- with .Values.engine.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  # The engine is reachable only through the gateway, which is also where authentication,
+  # quotas and per-tenant accounting happen. Giving it a NodePort or an Ingress would let a
+  # client talk to the model with no tenant identity at all.
+  selector:
+    {{- include "turboserve.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: engine
+  ports:
+    - name: http
+      port: {{ .Values.engine.service.port }}
+      targetPort: http
+      protocol: TCP
+{{- end }}

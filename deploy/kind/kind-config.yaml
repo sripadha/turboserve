@@ -1,0 +1,29 @@
+# kind cluster for the turboserve end-to-end job.
+#
+# Three nodes, not one: the chaos loop deletes a gateway pod every few seconds, and the
+# only way to show that deleting a pod is survivable is for the surviving replicas to be
+# somewhere else. On a single-node cluster the test degenerates into "does the kubelet
+# restart a container".
+#
+# The control-plane node publishes the gateway's NodePort (30080) on the host as 8080, so a
+# developer can curl the gateway without a port-forward. NodePort traffic is forwarded by
+# kube-proxy on any node, so it does not matter that no gateway pod is scheduled here.
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: turboserve-e2e
+
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP
+  - role: worker
+  - role: worker

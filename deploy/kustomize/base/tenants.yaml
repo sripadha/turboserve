@@ -1,0 +1,36 @@
+# Tenant directory, in the schema src/turboserve/gateway/tenants.py reads.
+#
+# API keys are stored as sha256 digests, never in clear text: this file ends up in git and
+# in a Secret, and a leaked copy must not be a leaked credential. Add a key with
+# `turboserve gateway hash-key '<key>'` and paste the digest under `keys_sha256`; keeping
+# two digests on a tenant is how a key is rotated without downtime.
+#
+# The digests below are of the demo keys "turboserve-demo-key" and "turboserve-batch-key",
+# published in docs/kubernetes.md because they guard nothing. Replace them.
+version: 1
+
+tenants:
+  - id: demo
+    name: Demo tenant
+    keys_sha256:
+      - "c56d1f3e9e2ab4741984fc2bf5d020c76d58b549bfa2f78b634176e5eef23f53"
+    rpm: 600
+    tpm: 300000
+    max_concurrency: 32
+    priority: 0
+    weight: 1.0
+
+  - id: batch
+    name: Batch tenant
+    keys_sha256:
+      - "a36ec89ffce384dc584067bf0c56426654e05c0adb9a458435f6666ae5f1de6a"
+    rpm: 120
+    tpm: 60000
+    max_concurrency: 8
+    priority: -10
+    weight: 0.5
+
+  # Used when the gateway runs with --no-require-auth.
+  - id: default
+    name: default (auth disabled)
+    max_concurrency: 64

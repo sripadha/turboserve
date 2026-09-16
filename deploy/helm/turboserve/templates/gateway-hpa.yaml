@@ -1,0 +1,51 @@
+{{/*
+Horizontal autoscaling for the stable lane.
+
+CPU alone is a poor signal for a gateway that spends its time waiting on backend sockets,
+so the useful metric is the one the gateway publishes itself: turboserve_queue_depth, the
+number of admitted-but-unfinished requests. It is off by default because serving it as a
+Pods metric needs an adapter (prometheus-adapter or KEDA) that not every cluster has, and
+an HPA with one unavailable metric stops acting on the others as well.
+
+The canary lane is deliberately not autoscaled: its replica count is the rollout weight,
+and an HPA changing it would change the traffic split under the controller's feet.
+*/}}
+{{- if .Values.gateway.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ printf "%s-stable" (include "turboserve.gateway.fullname" .) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "turboserve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  scaleTargetRef:
+    apiVersion: {{ if .Values.canary.argoRollouts.enabled }}argoproj.io/v1alpha1{{ else }}apps/v1{{ end }}
+    kind: {{ if .Values.canary.argoRollouts.enabled }}Rollout{{ else }}Deployment{{ end }}
+    name: {{ if .Values.canary.argoRollouts.enabled }}{{ include "turboserve.gateway.fullname" . }}{{ else }}{{ printf "%s-stable" (include "turboserve.gateway.fullname" .) }}{{ end }}
+  minReplicas: {{ .Values.gateway.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.gateway.autoscaling.maxReplicas }}
+  metrics:
+    {{- with .Values.gateway.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ . }}
+    {{- end }}
+    {{- if .Values.gateway.autoscaling.queueDepth.enabled }}
+    - type: Pods
+      pods:
+        metric:
+          name: {{ .Values.gateway.autoscaling.queueDepth.metricName }}
+        target:
+          type: AverageValue
+          averageValue: {{ .Values.gateway.autoscaling.queueDepth.averageValue | quote }}
+    {{- end }}
+  {{- with .Values.gateway.autoscaling.behavior }}
+  behavior:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

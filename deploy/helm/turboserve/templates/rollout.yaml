@@ -1,0 +1,113 @@
+{{/*
+Argo Rollouts variant of the gateway workload.
+
+Why it is optional rather than the default: two Deployments behind one ClusterIP Service
+split traffic by replica count, which is enough to judge a canary but cannot express "1 %"
+on a three-pod deployment. A Rollout replaces the Deployments with a controller that
+manipulates the stable and canary Service selectors directly, so the steps below are real
+traffic weights. The price is a CRD and a controller in the cluster, which is why this is
+behind a flag and why canary.enabled and canary.argoRollouts.enabled are refused together
+(see turboserve.validateValues): they would both try to own pods with the same lane
+labels.
+
+kubeconform validates this file only with -ignore-missing-schemas, because the Rollout
+schema ships with the Argo Rollouts CRDs and not with Kubernetes.
+*/}}
+{{- if .Values.canary.argoRollouts.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: {{ include "turboserve.gateway.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "turboserve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: {{ .Values.gateway.replicaCount }}
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "turboserve.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: gateway
+  strategy:
+    canary:
+      # The controller adds a pod-hash to these Services' selectors, which is what makes
+      # the weights exact instead of replica-proportional.
+      stableService: {{ printf "%s-stable" (include "turboserve.gateway.fullname" .) }}
+      canaryService: {{ printf "%s-canary" (include "turboserve.gateway.fullname" .) }}
+      steps:
+        {{- toYaml .Values.canary.argoRollouts.steps | nindent 8 }}
+      {{- with .Values.canary.argoRollouts.analysisTemplate }}
+      # Background analysis: the rollout is aborted the moment the template's metrics
+      # fail, without waiting for the next pause to end.
+      analysis:
+        templates:
+          - templateName: {{ . }}
+        startingStep: 1
+      {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "turboserve.labels" . | nindent 8 }}
+        app.kubernetes.io/component: gateway
+      annotations:
+        checksum/tenants: {{ include (print $.Template.BasePath "/secret-tenants.yaml") . | sha256sum }}
+        checksum/models: {{ include (print $.Template.BasePath "/configmap-models.yaml") . | sha256sum }}
+        {{- with .Values.gateway.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "turboserve.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.gateway.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.gateway.terminationGracePeriodSeconds }}
+      containers:
+        - name: gateway
+          image: {{ include "turboserve.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            {{- toYaml .Values.gateway.command | nindent 12 }}
+          args:
+            {{- include "turboserve.gateway.args" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.gateway.service.targetPort }}
+              protocol: TCP
+          env:
+            {{- include "turboserve.gateway.env" . | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep {{ .Values.gateway.preStopSleep }}"]
+          resources:
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.gateway.securityContext | nindent 12 }}
+          volumeMounts:
+            {{- include "turboserve.gateway.volumeMounts" . | nindent 12 }}
+      volumes:
+        {{- include "turboserve.gateway.volumes" . | nindent 8 }}
+      {{- with .Values.gateway.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.gateway.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

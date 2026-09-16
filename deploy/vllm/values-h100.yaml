@@ -1,0 +1,151 @@
+# Helm values for a single NVIDIA H100 80GB node.
+#
+#   helm upgrade --install turboserve deploy/helm/turboserve \
+#     -f deploy/vllm/values-h100.yaml --namespace turboserve --create-namespace
+#
+# Everything here is a capacity decision, and each one is written down with the reasoning
+# rather than the number alone, because the right value changes with the model.
+#
+# Sizing arithmetic for the defaults below (Qwen2.5-7B, bf16, one H100 80GB):
+#   weights        ~7.6e9 params x 2 bytes  ~= 15 GiB
+#   KV per token   2 (K and V) x 28 layers x 4 kv-heads x 128 head-dim x 2 bytes
+#                  = 57344 bytes/token ~= 56 KiB
+#   KV budget      0.90 x 80 GiB - 15 GiB - ~2 GiB activations ~= 55 GiB
+#   tokens in KV   55 GiB / 56 KiB ~= 1.0e6 tokens, i.e. ~120 concurrent sequences at the
+#                  8192-token context limit, or many more at realistic lengths.
+# maxNumSeqs is set below that ceiling so the scheduler is the thing that limits
+# concurrency, not the allocator running out of blocks mid-decode.
+
+image:
+  repository: ghcr.io/sripadha/turboserve-gateway
+  tag: "0.1.0"
+
+gateway:
+  # The gateway is I/O bound and cheap; two replicas are for availability during a rollout,
+  # not for throughput.
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      memory: 4Gi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+    # Requires a metrics adapter serving turboserve_queue_depth; see docs/kubernetes.md.
+    queueDepth:
+      enabled: false
+      metricName: turboserve_queue_depth
+      averageValue: "16"
+
+engine:
+  mode: vllm
+  model: Qwen/Qwen2.5-7B-Instruct
+  replicaCount: 1
+
+  image:
+    repository: vllm/vllm-openai
+    # Pinned, not floating: a vLLM minor release can change scheduling and invalidate any
+    # comparison made against an earlier run. The version is recorded in every result file.
+    tag: v0.11.0
+
+  vllm:
+    maxModelLen: 8192
+    # 0.90 rather than 0.95: the remaining headroom absorbs activation spikes during a
+    # long prefill. Pushing it higher trades a larger KV cache for CUDA OOM under burst.
+    gpuMemoryUtilization: 0.90
+    dtype: bfloat16
+    tensorParallelSize: 1
+
+    # Automatic prefix caching. Multi-tenant traffic is full of shared system prompts and
+    # few-shot preambles; with caching on, the shared span is prefilled once per node and
+    # every later request that starts with the same blocks skips that work, which is
+    # visible as a drop in TTFT and in nothing else.
+    enablePrefixCaching: true
+
+    # Chunked prefill interleaves a long prompt's prefill with other sequences' decode
+    # steps, so one 8k-token prompt cannot stall every stream already in flight.
+    enableChunkedPrefill: true
+
+    maxNumSeqs: 96
+    # Token budget per scheduler step. Larger keeps the GPU busier on prefill; smaller
+    # keeps decode latency smoother. 8192 lets one full-length prompt be prefilled in a
+    # single step without starving decode when chunked prefill is on.
+    maxNumBatchedTokens: 8192
+
+    # Speculative decoding: a small draft model proposes tokens, the target verifies them
+    # in one forward pass. It trades GPU memory and some prefill throughput for lower
+    # decode latency, and it only pays off when acceptance is high, i.e. when draft and
+    # target are from the same family and share a tokenizer. Off by default because the
+    # draft model's weights come out of the same 80 GB as the KV cache.
+    speculative:
+      enabled: false
+      model: Qwen/Qwen2.5-0.5B-Instruct
+      numSpeculativeTokens: 4
+
+    # Multi-tenant LoRA: many adapters over one set of base weights, chosen per request by
+    # the `model` field. maxLoras is how many can be resident on the GPU at once, not how
+    # many can be registered -- the rest live in host memory and are swapped in on demand.
+    lora:
+      enabled: true
+      maxLoras: 8
+      maxLoraRank: 16
+      modules: []
+
+  resources:
+    limits:
+      nvidia.com/gpu: 1
+      memory: 96Gi
+    requests:
+      cpu: "8"
+      memory: 64Gi
+
+  nodeSelector:
+    nvidia.com/gpu.product: NVIDIA-H100-80GB-HBM3
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: NoSchedule
+
+  shmSizeGi: 16
+
+  # A 15 GB checkpoint should be downloaded once per node, not once per pod restart.
+  modelCache:
+    enabled: true
+    size: 200Gi
+    accessMode: ReadWriteOnce
+
+  # Gated checkpoints (gemma, llama) need a token; create it before installing:
+  #   kubectl create secret generic hf-token --from-literal=token=hf_xxx -n turboserve
+  hfTokenSecret:
+    name: ""
+    key: token
+
+  adapters:
+    enabled: false
+    mountPath: /adapters
+    persistence:
+      enabled: true
+      size: 50Gi
+    sync:
+      enabled: true
+      sourceUrl: ""
+
+monitoring:
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+  prometheusRule:
+    enabled: true
+  grafanaDashboard:
+    enabled: true
+
+networkPolicy:
+  enabled: true
+
+canary:
+  enabled: false
+  weight: 25

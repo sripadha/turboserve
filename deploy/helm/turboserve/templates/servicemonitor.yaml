@@ -1,0 +1,59 @@
+{{/*
+Prometheus Operator scrape configuration.
+
+jobLabel pins the `job` label to the Service's app.kubernetes.io/name, i.e. "turboserve",
+which is the label the availability alerts in deploy/prometheus/rules.yaml match on and
+the same job name the docker-compose Prometheus uses. Without it the job would be the
+Service name, which contains the release name and would differ between installs, and the
+alerts would quietly never fire.
+
+The lane-agnostic gateway Service is selected, so both lanes are scraped by one job and
+told apart by the `lane` label the gateway puts on every series.
+*/}}
+{{- if .Values.monitoring.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "turboserve.gateway.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "turboserve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+    {{- with .Values.monitoring.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  jobLabel: app.kubernetes.io/name
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      {{- include "turboserve.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: gateway
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.monitoring.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.monitoring.serviceMonitor.scrapeTimeout }}
+      scheme: http
+      # `pod_lane`, not `lane`: the gateway already puts a `lane` label on its series,
+      # taken from the backend pool being routed to. A target label of the same name would
+      # collide and Prometheus would rename the real one to `exported_lane`, silently
+      # breaking every per-lane query. This one says which Deployment the sample came from,
+      # which is a different and occasionally useful question.
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_label_turboserve_io_lane]
+          targetLabel: pod_lane
+          action: replace
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
+          action: replace
+        {{- with .Values.monitoring.serviceMonitor.relabelings }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.monitoring.serviceMonitor.metricRelabelings }}
+      metricRelabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

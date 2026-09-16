@@ -1,0 +1,179 @@
+{{/*
+The gateway Deployments, one per lane.
+
+A "lane" is the unit the canary controller reasons about: every metric the gateway exports
+carries a `lane` label, the controller compares the canary lane's error ratio and p95 TTFT
+against the stable lane's under identical load, and the rollout advances or rolls back on
+that comparison. Rendering both lanes from the same loop guarantees they differ only in
+the things a canary is allowed to differ in -- image, replica count, extra environment --
+so a regression the controller sees is a regression in the build, not in the manifest.
+
+When canary.argoRollouts.enabled is set, rollout.yaml owns the pods instead and this
+template renders nothing.
+*/}}
+{{- include "turboserve.validateValues" . -}}
+{{- if not .Values.canary.argoRollouts.enabled }}
+{{- $lanes := list "stable" }}
+{{- if .Values.canary.enabled }}{{ $lanes = append $lanes "canary" }}{{ end }}
+{{- range $lane := $lanes }}
+{{- $isCanary := eq $lane "canary" }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ printf "%s-%s" (include "turboserve.gateway.fullname" $) $lane }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "turboserve.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: gateway
+    turboserve.io/lane: {{ $lane }}
+  {{- with $.Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ include "turboserve.gateway.replicas" (dict "root" $ "lane" $lane) }}
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "turboserve.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: gateway
+      turboserve.io/lane: {{ $lane }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Never drop below the current capacity during an update: the surge pod becomes
+      # ready (its /readyz reaches a backend) before an old one is asked to stop.
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        {{- include "turboserve.labels" $ | nindent 8 }}
+        app.kubernetes.io/component: gateway
+        turboserve.io/lane: {{ $lane }}
+        {{- with $.Values.gateway.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        # Roll the pods when the fleet data changes. Without these, editing a tenant's
+        # quota would leave every running gateway serving the old file until something
+        # else happened to restart it.
+        checksum/tenants: {{ include (print $.Template.BasePath "/secret-tenants.yaml") $ | sha256sum }}
+        checksum/models: {{ include (print $.Template.BasePath "/configmap-models.yaml") $ | sha256sum }}
+        {{- with $.Values.commonAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with $.Values.gateway.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "turboserve.serviceAccountName" $ }}
+      automountServiceAccountToken: {{ $.Values.serviceAccount.automountServiceAccountToken }}
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml $.Values.gateway.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ $.Values.gateway.terminationGracePeriodSeconds }}
+      {{- if and $.Values.engine.adapters.enabled $.Values.engine.adapters.sync.enabled (not (include "turboserve.engine.standalone" $)) }}
+      initContainers:
+        {{- include "turboserve.adapters.initContainer" $ | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: gateway
+          image: {{ if and $isCanary $.Values.canary.image.repository }}{{ printf "%s:%s" $.Values.canary.image.repository (default $.Chart.AppVersion $.Values.canary.image.tag) }}{{ else }}{{ include "turboserve.image" $ }}{{ end }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          command:
+            {{- toYaml $.Values.gateway.command | nindent 12 }}
+          args:
+            {{- include "turboserve.gateway.args" $ | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ $.Values.gateway.service.targetPort }}
+              protocol: TCP
+          env:
+            {{- include "turboserve.gateway.env" $ | nindent 12 }}
+            {{- if $isCanary }}
+            {{- range $name, $value := $.Values.canary.env }}
+            - name: {{ $name }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- end }}
+          {{- with $.Values.gateway.envFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if $.Values.gateway.probes.startup.enabled }}
+          # Startup probe rather than a long initialDelaySeconds on liveness: loading a
+          # tokenizer (reference mode) can take tens of seconds, and the liveness probe
+          # should be fast once the process is actually up.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            failureThreshold: {{ $.Values.gateway.probes.startup.failureThreshold }}
+            periodSeconds: {{ $.Values.gateway.probes.startup.periodSeconds }}
+          {{- end }}
+          {{- if $.Values.gateway.probes.liveness.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: {{ $.Values.gateway.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ $.Values.gateway.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ $.Values.gateway.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ $.Values.gateway.probes.liveness.failureThreshold }}
+          {{- end }}
+          {{- if $.Values.gateway.probes.readiness.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: {{ $.Values.gateway.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ $.Values.gateway.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ $.Values.gateway.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ $.Values.gateway.probes.readiness.failureThreshold }}
+          {{- end }}
+          {{- if $.Values.gateway.preStopSleep }}
+          lifecycle:
+            preStop:
+              # Endpoint removal and SIGTERM race: kube-proxy is told about the deletion
+              # asynchronously, so a pod can still receive connections after its container
+              # has begun shutting down. Sleeping here keeps the socket accepting for long
+              # enough for every dataplane to catch up. This is the difference between a
+              # pod deletion costing zero failed requests and costing a handful, which is
+              # what the kind chaos job measures.
+              #
+              # `exec` rather than the `sleep` lifecycle action, which only reached GA in
+              # 1.32; this chart supports 1.27+, and `sleep` exists in the gateway image.
+              exec:
+                command: ["/bin/sh", "-c", "sleep {{ $.Values.gateway.preStopSleep }}"]
+          {{- end }}
+          resources:
+            {{- toYaml $.Values.gateway.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml $.Values.gateway.securityContext | nindent 12 }}
+          volumeMounts:
+            {{- include "turboserve.gateway.volumeMounts" $ | nindent 12 }}
+      volumes:
+        {{- include "turboserve.gateway.volumes" $ | nindent 8 }}
+      {{- with $.Values.gateway.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.gateway.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.gateway.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.gateway.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+{{- end }}

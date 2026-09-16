@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: turboserve-engine
+  labels:
+    app.kubernetes.io/component: engine
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: engine
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # A surge pod would need a second GPU and would sit Pending forever on a
+      # single-GPU node pool.
+      maxSurge: 0
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: engine
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.11.0
+          args:
+            - --model
+            - Qwen/Qwen2.5-7B-Instruct
+            - --host
+            - "0.0.0.0"
+            - --port
+            - "8000"
+            - --max-model-len
+            - "8192"
+            - --gpu-memory-utilization
+            - "0.90"
+            # Shared prompt prefixes are prefilled once per node instead of once per
+            # request; this is the flag the prefix-cache scenario measures against.
+            - --enable-prefix-caching
+            - --enable-chunked-prefill
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: HF_HOME
+              value: /models
+          # No liveness probe: weight loading and CUDA-graph capture take minutes and a
+          # liveness probe firing during them produces a restart loop.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            failureThreshold: 90
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+              memory: 64Gi
+            requests:
+              cpu: "4"
+              memory: 32Gi
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+            - name: models
+              mountPath: /models
+      volumes:
+        # The default 64 MB /dev/shm is too small for torch's workers and NCCL.
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+        - name: models
+          emptyDir: {}
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule

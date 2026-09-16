@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: turboserve-gateway
+  labels:
+    app.kubernetes.io/component: gateway
+spec:
+  # Node drains are the common voluntary disruption; without a budget one drain can take
+  # every replica at once.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: gateway

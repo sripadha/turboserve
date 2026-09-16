@@ -1,0 +1,21 @@
+# Model pools, in the schema src/turboserve/gateway/router.py reads.
+#
+# A model name addresses a pool of backends. Each backend declares the lane it belongs to,
+# which is where the `lane` label on every gateway metric comes from -- and therefore what
+# the canary controller compares. `price` is a configured list price used only to attribute
+# spend between tenants; it is not a measurement.
+#
+# This base serves a mock pool, so it needs no GPU and no weights. overlays/gpu replaces it
+# with a vLLM pool.
+version: 1
+
+models:
+  - name: Qwen/Qwen2.5-7B-Instruct
+    backends:
+      - name: mock-a
+        backend: mock
+        lane: stable
+        weight: 1.0
+        options:
+          models: ["Qwen/Qwen2.5-7B-Instruct"]
+          max_tokens: 64

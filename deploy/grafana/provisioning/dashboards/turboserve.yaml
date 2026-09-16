@@ -1,0 +1,18 @@
+# Grafana dashboard provisioning for the docker-compose stack: load every dashboard JSON
+# found under /var/dashboards, which docker-compose.yml bind-mounts from
+# deploy/grafana/dashboards/. In Kubernetes the same JSON arrives as a ConfigMap labelled
+# for the Grafana sidecar (see the chart's grafana-dashboard.yaml template).
+
+apiVersion: 1
+
+providers:
+  - name: turboserve
+    orgId: 1
+    folder: turboserve
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/dashboards
+      foldersFromFilesStructure: false

@@ -1,0 +1,22 @@
+{{/*
+Model routing and the per-token prices used for cost attribution. A ConfigMap, not a
+Secret: nothing here is confidential, and being able to `kubectl get cm -o yaml` the price
+table is how an operator checks what the cost_usd metric is counting.
+*/}}
+{{- if and .Values.models.create (not .Values.models.existingConfigMap) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "%s-models" (include "turboserve.fullname" .) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "turboserve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fleet-data
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  {{ .Values.models.key }}: |
+    {{- .Values.models.config | nindent 4 }}
+{{- end }}

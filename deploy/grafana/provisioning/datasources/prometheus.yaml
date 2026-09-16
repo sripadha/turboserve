@@ -1,0 +1,19 @@
+# Grafana datasource provisioning for the docker-compose stack.
+#
+# The uid is fixed ("prometheus") because deploy/grafana/dashboards/turboserve.json
+# references its datasource through a dashboard variable of type `datasource`; a stable uid
+# means the dashboard resolves without anyone picking a source from a dropdown first.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 15s
+      httpMethod: POST

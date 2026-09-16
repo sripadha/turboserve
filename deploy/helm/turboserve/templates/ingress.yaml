@@ -1,0 +1,46 @@
+{{/*
+Ingress for the gateway.
+
+It points at the lane-agnostic Service, so a canary receives its replica share of external
+traffic too. To take a canary out of the external path while still exercising it from
+inside the cluster, point `.spec.rules[].http.paths[].backend` at the -stable Service by
+setting ingress.annotations plus a controller-specific canary annotation, or use Argo
+Rollouts, which manipulates the Service selectors instead.
+*/}}
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "turboserve.gateway.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "turboserve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "turboserve.gateway.fullname" $ }}
+                port:
+                  number: {{ $.Values.gateway.service.port }}
+          {{- end }}
+    {{- end }}
+{{- end }}

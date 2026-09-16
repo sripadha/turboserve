@@ -1,0 +1,30 @@
+{{/*
+SLO alerts, as a PrometheusRule.
+
+The rule bodies are not written here: `.Files.Get` pulls in files/prometheus-rules.yaml,
+which is a symlink to deploy/prometheus/rules.yaml -- the same file a standalone
+Prometheus (docker-compose.yml) loads through rule_files. Helm follows symlinks inside a
+chart directory when it loads or packages it, so the packaged chart carries the file's
+contents and the two deployment paths cannot drift into alerting on different thresholds.
+
+Set monitoring.prometheusRule.groups to replace them wholesale.
+*/}}
+{{- if .Values.monitoring.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "turboserve.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "turboserve.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- if .Values.monitoring.prometheusRule.groups }}
+  groups:
+    {{- toYaml .Values.monitoring.prometheusRule.groups | nindent 4 }}
+  {{- else }}
+  {{- .Files.Get "files/prometheus-rules.yaml" | nindent 2 }}
+  {{- end }}
+{{- end }}

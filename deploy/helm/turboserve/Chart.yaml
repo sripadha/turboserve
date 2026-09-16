@@ -1,0 +1,34 @@
+apiVersion: v2
+name: turboserve
+description: Multi-tenant LLM serving — OpenAI-compatible gateway, vLLM or reference engine, SLO-gated canary lanes
+type: application
+
+# version  = the chart's own version; bump it for any template or default change.
+# appVersion = the turboserve release the default image tag points at.
+version: 0.1.0
+appVersion: "0.1.0"
+
+kubeVersion: ">=1.27.0-0"
+
+home: https://github.com/sripadha/turboserve
+sources:
+  - https://github.com/sripadha/turboserve
+keywords:
+  - llm
+  - inference
+  - vllm
+  - openai
+  - multi-tenant
+  - canary
+maintainers:
+  - name: E G Sripadha Vallabha
+    url: https://github.com/sripadha
+
+# No dependencies on purpose. kube-prometheus-stack and Argo Rollouts are *optional*
+# consumers of what this chart emits (ServiceMonitor, PrometheusRule, a dashboard
+# ConfigMap, a Rollout), and pulling either in as a subchart would force a monitoring
+# stack on clusters that already have one. The flags under `monitoring:` and
+# `canary.argoRollouts:` in values.yaml turn those objects off when the CRDs are absent.
+annotations:
+  category: MachineLearning
+  licenses: Apache-2.0

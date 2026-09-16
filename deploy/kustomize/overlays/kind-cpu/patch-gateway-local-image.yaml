@@ -1,0 +1,20 @@
+# imagePullPolicy: Never is load-bearing, not hygiene. The image is side-loaded into the
+# kind nodes with `kind load docker-image`; with the default IfNotPresent a node that has
+# not yet been loaded would try ghcr.io, fail, and the e2e would report ImagePullBackOff
+# instead of the thing it is actually testing.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: turboserve-gateway
+spec:
+  template:
+    spec:
+      containers:
+        - name: gateway
+          imagePullPolicy: Never
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi

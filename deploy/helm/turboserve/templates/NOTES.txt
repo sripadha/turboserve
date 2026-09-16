@@ -1,0 +1,73 @@
+turboserve {{ .Chart.AppVersion }} installed as {{ .Release.Name }} in namespace {{ .Release.Namespace }}.
+
+Engine mode: {{ .Values.engine.mode }}
+{{- if eq .Values.engine.mode "mock" }}
+  The gateway serves synthetic tokens from its in-process mock backend. No GPU, no model,
+  no weights are involved -- this mode exists to exercise the Kubernetes objects, the
+  routing and the chaos/canary paths on a cluster with no accelerators.
+{{- else if eq .Values.engine.mode "reference" }}
+  The from-scratch engine runs inside the gateway pods, so those pods hold the GPU, the
+  model cache and the LoRA adapters.
+{{- else }}
+  vLLM runs in {{ .Values.engine.replicaCount }} separate pod(s) serving {{ .Values.engine.model }};
+  the gateway routes to {{ include "turboserve.engine.url" . }}.
+{{- end }}
+
+Reach the API:
+
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "turboserve.gateway.fullname" . }} 8000:{{ .Values.gateway.service.port }}
+  curl -s localhost:8000/healthz
+{{- if .Values.gateway.requireAuth }}
+  curl -s localhost:8000/v1/models -H "Authorization: Bearer <tenant api key>"
+{{- else }}
+  curl -s localhost:8000/v1/models        # gateway.requireAuth=false: no credential needed
+{{- end }}
+
+{{- if .Values.ingress.enabled }}
+
+Ingress hosts:
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+{{- end }}
+{{- end }}
+
+Lanes:
+{{- if .Values.canary.argoRollouts.enabled }}
+  An Argo Rollout owns the pods. Watch it with:
+    kubectl argo rollouts get rollout {{ include "turboserve.gateway.fullname" . }} -n {{ .Release.Namespace }} --watch
+{{- else if .Values.canary.enabled }}
+  stable: {{ include "turboserve.gateway.replicas" (dict "root" . "lane" "stable") }} replica(s)
+  canary: {{ include "turboserve.gateway.replicas" (dict "root" . "lane" "canary") }} replica(s) (weight {{ .Values.canary.weight }}%, approximated by replica share)
+  Roll back instantly by upgrading with --set canary.enabled=false.
+{{- else }}
+  stable only ({{ .Values.gateway.replicaCount }} replica(s)). Enable a canary with
+  --set canary.enabled=true --set canary.weight=25 --set canary.image.tag=<new tag>.
+{{- end }}
+
+Observability:
+{{- if .Values.monitoring.serviceMonitor.enabled }}
+  ServiceMonitor is on; the scrape job is labelled job="turboserve".
+{{- else }}
+  ServiceMonitor is off. Turn it on with --set monitoring.serviceMonitor.enabled=true on a
+  cluster running the Prometheus Operator, or scrape {{ include "turboserve.gateway.fullname" . }}:{{ .Values.gateway.service.port }}/metrics yourself.
+{{- end }}
+{{- if not .Values.monitoring.prometheusRule.enabled }}
+  SLO alerts are off (--set monitoring.prometheusRule.enabled=true).
+{{- end }}
+{{- if not .Values.monitoring.grafanaDashboard.enabled }}
+  The Grafana dashboard ConfigMap is off (--set monitoring.grafanaDashboard.enabled=true).
+{{- end }}
+
+{{- if not .Values.gateway.requireAuth }}
+
+WARNING: gateway.requireAuth=false. Every request is served as the `default` tenant with no
+credential at all. This is for the kind end-to-end job, not for a reachable gateway.
+{{- end }}
+{{- if and .Values.tenants.create (not .Values.tenants.existingSecret) }}
+
+WARNING: the chart's default tenant file is installed. Its API-key hashes are the demo
+keys published in docs/kubernetes.md and protect nothing. Before this gateway sees real
+traffic, set tenants.create=false and tenants.existingSecret to a Secret you manage.
+{{- end }}
+
+Docs: docs/kubernetes.md (this chart), docs/runbook.md (day-two operations).

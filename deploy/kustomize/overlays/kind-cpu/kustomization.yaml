@@ -1,0 +1,33 @@
+# Local kind cluster, no GPU.
+#
+# Everything here exists because a kind cluster differs from a real one in exactly three
+# ways: there is no accelerator (so the engine must be the in-process mock), there is no
+# registry (so the image is side-loaded with `kind load docker-image` and must never be
+# pulled), and there is no ingress controller (so the Service is a NodePort mapped to a
+# host port by kind/kind-config.yaml).
+#
+# This is the overlay deploy/kind/e2e.sh and .github/workflows/kind-e2e.yml exercise.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: turboserve
+
+resources:
+  - ../../base
+  - namespace.yaml
+
+# Three replicas so the chaos loop in the e2e can delete one every 10 s and still leave a
+# quorum serving: with two, a delete during a rolling replacement empties the endpoint set.
+replicas:
+  - name: turboserve-gateway
+    count: 3
+
+images:
+  - name: turboserve-gateway
+    newName: turboserve-gateway
+    newTag: e2e
+
+patches:
+  - path: patch-service-nodeport.yaml
+  - path: patch-gateway-local-image.yaml

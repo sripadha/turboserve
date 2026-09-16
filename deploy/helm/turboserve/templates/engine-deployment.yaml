@@ -1,0 +1,211 @@
+{{/*
+The vLLM engine Deployment.
+
+Rendered only for engine.mode == "vllm": in mock and reference mode the engine lives
+inside the gateway process and there is nothing to deploy here. Splitting them in
+production buys three things that matter more than the extra hop: the GPU node pool scales
+independently of the request-handling tier, a gateway rollout does not restart a process
+holding 60 GB of KV cache, and the engine image is upstream vLLM rather than anything
+built in this repository, so its version is a value and not a rebuild.
+
+Every flag below comes from values.yaml; see deploy/vllm/README.md for what each one does
+and deploy/vllm/values-h100.yaml for a filled-in single-H100 profile.
+*/}}
+{{- if include "turboserve.engine.standalone" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "turboserve.engine.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "turboserve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: engine
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.engine.replicaCount }}
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "turboserve.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: engine
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # maxSurge 0: a surge pod would need a second GPU, which on a single-GPU node pool
+      # means it stays Pending forever and the rollout never completes. Engine restarts
+      # are therefore visibly disruptive, which is what the gateway's retry-before-first
+      # -byte and the PodDisruptionBudget on the gateway lane are there to absorb.
+      maxSurge: 0
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        {{- include "turboserve.labels" . | nindent 8 }}
+        app.kubernetes.io/component: engine
+      {{- with .Values.engine.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "turboserve.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.engine.podSecurityContext | nindent 8 }}
+      # Long grace period: a terminating engine should finish the sequences it is decoding
+      # rather than truncate every stream it holds.
+      terminationGracePeriodSeconds: 120
+      {{- if and .Values.engine.adapters.enabled .Values.engine.adapters.sync.enabled }}
+      initContainers:
+        {{- include "turboserve.adapters.initContainer" . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: vllm
+          image: {{ printf "%s:%s" .Values.engine.image.repository .Values.engine.image.tag | quote }}
+          imagePullPolicy: {{ .Values.engine.image.pullPolicy }}
+          args:
+            - --model
+            - {{ .Values.engine.model | quote }}
+            - --served-model-name
+            - {{ .Values.engine.model | quote }}
+            - --host
+            - "0.0.0.0"
+            - --port
+            - {{ .Values.engine.service.port | quote }}
+            - --max-model-len
+            - {{ .Values.engine.vllm.maxModelLen | quote }}
+            - --gpu-memory-utilization
+            - {{ .Values.engine.vllm.gpuMemoryUtilization | quote }}
+            - --max-num-seqs
+            - {{ .Values.engine.vllm.maxNumSeqs | quote }}
+            - --max-num-batched-tokens
+            - {{ .Values.engine.vllm.maxNumBatchedTokens | quote }}
+            - --tensor-parallel-size
+            - {{ .Values.engine.vllm.tensorParallelSize | quote }}
+            - --dtype
+            - {{ .Values.engine.vllm.dtype | quote }}
+            {{- if .Values.engine.vllm.enablePrefixCaching }}
+            # Automatic prefix caching: identical leading blocks of a prompt reuse the KV
+            # already in the cache, so a shared system prompt is prefilled once per node
+            # instead of once per request.
+            - --enable-prefix-caching
+            {{- end }}
+            {{- if .Values.engine.vllm.enableChunkedPrefill }}
+            - --enable-chunked-prefill
+            {{- end }}
+            {{- if .Values.engine.vllm.speculative.enabled }}
+            # Draft-then-verify decoding. The draft model must share the target's
+            # tokenizer, and it occupies GPU memory that gpuMemoryUtilization has to leave
+            # room for.
+            - --speculative-model
+            - {{ .Values.engine.vllm.speculative.model | quote }}
+            - --num-speculative-tokens
+            - {{ .Values.engine.vllm.speculative.numSpeculativeTokens | quote }}
+            {{- end }}
+            {{- if .Values.engine.vllm.lora.enabled }}
+            - --enable-lora
+            - --max-loras
+            - {{ .Values.engine.vllm.lora.maxLoras | quote }}
+            - --max-lora-rank
+            - {{ .Values.engine.vllm.lora.maxLoraRank | quote }}
+            {{- range .Values.engine.vllm.lora.modules }}
+            - --lora-modules
+            - {{ . | quote }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.engine.vllm.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.engine.service.port }}
+              protocol: TCP
+          env:
+            - name: VLLM_LOGGING_LEVEL
+              value: {{ .Values.gateway.logLevel | quote }}
+            - name: HF_HOME
+              value: /models
+            {{- if .Values.engine.hfTokenSecret.name }}
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.engine.hfTokenSecret.name }}
+                  key: {{ .Values.engine.hfTokenSecret.key }}
+            {{- end }}
+            {{- if .Values.engine.apiKeySecret.name }}
+            - name: VLLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.engine.apiKeySecret.name }}
+                  key: {{ .Values.engine.apiKeySecret.key }}
+            {{- end }}
+          # No liveness probe on purpose. Weight loading and CUDA-graph capture can take
+          # minutes, and a liveness probe that fires during them produces an endless
+          # restart loop; readiness alone keeps a not-yet-warm engine out of the Service,
+          # which is the behaviour that matters.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            failureThreshold: 90
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.engine.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.engine.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+            - name: models
+              mountPath: /models
+            {{- if .Values.engine.adapters.enabled }}
+            - name: adapters
+              mountPath: {{ .Values.engine.adapters.mountPath }}
+            {{- end }}
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{ printf "%dGi" (int .Values.engine.shmSizeGi) }}
+        - name: models
+          {{- if .Values.engine.modelCache.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-models" (include "turboserve.engine.fullname" .)) .Values.engine.modelCache.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- if .Values.engine.adapters.enabled }}
+        - name: adapters
+          {{- if .Values.engine.adapters.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-adapters" (include "turboserve.fullname" .)) .Values.engine.adapters.persistence.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
+      {{- with .Values.engine.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.engine.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.engine.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

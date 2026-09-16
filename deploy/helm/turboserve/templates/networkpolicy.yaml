@@ -1,0 +1,133 @@
+{{/*
+Default-deny for both components, then exactly the flows that exist:
+
+  clients            -> gateway:http     (empty allowFrom means any pod in the cluster)
+  monitoring         -> gateway:http     (/metrics is on the same port as the API)
+  gateway            -> engine:http      (the only way to reach the model)
+  everything         -> kube-dns:53
+
+The engine policy is the one that earns its keep: without it, any pod in the namespace can
+POST to vLLM directly and bypass authentication, quotas and per-tenant accounting
+entirely, because vLLM has no notion of a tenant.
+*/}}
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "turboserve.gateway.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "turboserve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "turboserve.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        {{- if .Values.networkPolicy.allowFrom }}
+        {{- toYaml .Values.networkPolicy.allowFrom | nindent 8 }}
+        {{- else }}
+        # No allowFrom configured: accept from any pod, which is still narrower than no
+        # policy at all because host-network and out-of-cluster sources are excluded.
+        - podSelector: {}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.gateway.service.targetPort }}
+    - from:
+        - namespaceSelector:
+            {{- toYaml .Values.networkPolicy.monitoringNamespaceSelector | nindent 12 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.gateway.service.targetPort }}
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- if include "turboserve.engine.standalone" . }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "turboserve.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: engine
+      ports:
+        - protocol: TCP
+          port: {{ .Values.engine.service.port }}
+    {{- end }}
+    {{- if .Values.networkPolicy.allowExternalEgress }}
+    # Needed whenever a backend is outside the cluster (a hosted OpenAI-compatible
+    # endpoint) or the gateway loads a tokenizer from the hub on start-up.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+    {{- end }}
+{{- if include "turboserve.engine.standalone" . }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "turboserve.engine.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "turboserve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: engine
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "turboserve.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: engine
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "turboserve.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: gateway
+        - namespaceSelector:
+            {{- toYaml .Values.networkPolicy.monitoringNamespaceSelector | nindent 12 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.engine.service.port }}
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- if .Values.networkPolicy.allowExternalEgress }}
+    # huggingface.co on a cold model cache, and the object store for adapters.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+    {{- end }}
+{{- end }}
+{{- end }}

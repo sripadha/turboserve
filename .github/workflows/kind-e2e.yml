@@ -1,0 +1,132 @@
+# End-to-end chaos test on a real Kubernetes cluster.
+#
+# `ci.yml` proves the manifests are well formed (helm lint, kubeconform) and that the
+# gateway image builds. Neither of those proves the deployment survives losing a pod, which
+# is the claim the readiness gating, the PodDisruptionBudget, `maxUnavailable: 0` and the
+# preStop drain all exist to support. This workflow is where that claim is tested: it
+# creates a three-node kind cluster, installs the chart, and runs a steady load against the
+# gateway while deleting a gateway pod every ten seconds, then asserts the failed-request
+# rate stayed under the objective.
+#
+# The engine is the in-process mock: hosted runners have no GPU, and the variable under
+# test is pod lifecycle rather than token quality.
+#
+# Locally the same thing runs with `deploy/kind/e2e.sh`, which is the script this workflow
+# calls -- there is no CI-only copy of the logic to drift out of step.
+
+name: kind-e2e
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "deploy/**"
+      - "src/turboserve/gateway/**"
+      - "src/turboserve/bench/**"
+      - "src/turboserve/chaos/**"
+      - "Dockerfile.gateway"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/kind-e2e.yml"
+  pull_request:
+    paths:
+      - "deploy/**"
+      - "src/turboserve/gateway/**"
+      - "src/turboserve/bench/**"
+      - "src/turboserve/chaos/**"
+      - "Dockerfile.gateway"
+      - ".github/workflows/kind-e2e.yml"
+  workflow_dispatch:
+    inputs:
+      rps:
+        description: "Requests per second"
+        default: "20"
+      duration:
+        description: "Load duration in seconds"
+        default: "60"
+      keep_cluster:
+        description: "Leave the kind cluster running (debugging a self-hosted runner)"
+        default: "false"
+
+concurrency:
+  group: kind-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  chaos:
+    name: kind + chaos load
+    runs-on: ubuntu-latest
+    # Generous: most of it is the image build. The load itself is a minute.
+    timeout-minutes: 45
+
+    env:
+      IMAGE: turboserve-gateway:e2e
+      CLUSTER_NAME: turboserve-e2e
+      NAMESPACE: turboserve
+      RELEASE: turboserve
+      RPS: ${{ github.event.inputs.rps || '20' }}
+      DURATION: ${{ github.event.inputs.duration || '60' }}
+      CHAOS_INTERVAL: "10"
+      # The canary gate, and the number deploy/prometheus/rules.yaml alerts on.
+      MAX_ERROR_RATE: "0.005"
+      REPLICAS: "3"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kind
+        uses: helm/kind-action@v1
+        with:
+          version: v0.30.0
+          # The cluster is created by e2e.sh with deploy/kind/kind-config.yaml, so that the
+          # local and CI runs use the same topology. This action only puts kind on PATH.
+          install_only: true
+
+      - name: Show tool versions
+        run: |
+          docker version --format '{{.Server.Version}}'
+          kind version
+          kubectl version --client
+          helm version --short
+
+      # The Dockerfile's builder stage resolves the CPU torch wheels; caching the uv
+      # download between runs turns a ~4 minute dependency install into seconds.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the gateway image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.gateway
+          tags: ${{ env.IMAGE }}
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run the end-to-end chaos test
+        env:
+          # The image is already built and loaded into the local docker daemon; e2e.sh
+          # side-loads it into the kind nodes itself.
+          SKIP_BUILD: "1"
+          KEEP_CLUSTER: ${{ github.event.inputs.keep_cluster == 'true' && '1' || '0' }}
+        run: bash deploy/kind/e2e.sh
+
+      - name: Upload the run file
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kind-e2e-result
+          path: results/kind-e2e/run.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Cluster diagnostics
+        if: failure()
+        run: |
+          kubectl get all -A || true
+          kubectl describe pods -n "$NAMESPACE" || true
+          kubectl logs -n "$NAMESPACE" -l app.kubernetes.io/component=gateway --tail=200 --prefix || true

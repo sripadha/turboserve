@@ -1,0 +1,22 @@
+# GPU node pool: the gateway stays CPU-only and routes to a separate vLLM Deployment.
+#
+# Split for the same reasons the Helm chart splits them -- the GPU tier scales on its own,
+# a gateway rollout does not evict a process holding tens of gigabytes of KV cache, and the
+# engine image is upstream vLLM rather than anything built here.
+#
+# For anything with more knobs than this (canary lanes, HPA, ServiceMonitor, adapter sync)
+# use the Helm chart; this overlay is the smallest thing that serves a real model.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: turboserve
+
+resources:
+  - ../../base
+  - namespace.yaml
+  - engine-deployment.yaml
+  - engine-service.yaml
+
+patches:
+  - path: patch-gateway-vllm.yaml

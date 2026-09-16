@@ -1,0 +1,28 @@
+# Point the gateway at the vLLM Service instead of its in-process mock.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: turboserve-gateway
+spec:
+  template:
+    spec:
+      containers:
+        - name: gateway
+          # `--engine <url>` is how the gateway is pointed at an OpenAI-compatible server;
+          # there is no `vllm` literal and no separate URL flag.
+          args:
+            - gateway
+            - serve
+            - --engine
+            - http://turboserve-engine:8000/v1
+            - --model
+            - Qwen/Qwen2.5-7B-Instruct
+            - --tenants
+            - /etc/turboserve/tenants/tenants.yaml
+            - --models
+            - /etc/turboserve/models/models.yaml
+            - --host
+            - "0.0.0.0"
+            - --port
+            - "8000"
+            - --require-auth
