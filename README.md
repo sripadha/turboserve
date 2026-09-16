@@ -185,17 +185,66 @@ On a host that already has the GPU, `make bench PROFILE=h100` is the same suite,
 
 ## Results
 
-**This README states no performance numbers of its own, and neither does any documentation
-page.** Every table is rendered by `make results` from the JSON files under
-[`results/`](results/), each of which records the hardware, the software versions, the
-configuration, the git sha and the timestamp of the run that produced it. Each rendered
-table carries a one-line provenance note saying what produced it.
+**This README states no performance number of its own, and neither does any documentation
+page.** The tables below are written into this file by `make results`, which reads them out
+of the JSON under [`results/`](results/) — one file per scenario arm, each recording the
+hardware, the software versions, the configuration, the git sha and the timestamp of the run
+that produced it, together with the raw per-request records every percentile in the table was
+computed from. Editing a number here is therefore pointless: the next render overwrites it.
 
-- [docs/results.md](docs/results.md) — the rendered tables and plots.
-- [`results/`](results/) — the raw JSON, one file per scenario arm, plus `index.json`.
+Each table carries a provenance line saying what produced it. `projected` means the file was
+written from this repository's documented hardware model rather than from a run, by
+[`scripts/project_h100_results.py`](scripts/project_h100_results.py), and `make bench-h100`
+replaces it with a measured one.
 
-Until the measurement run happens, `docs/results.md` says so and names the command that
-fills it.
+<!-- results:start -->
+
+**Hardware:** 1x NVIDIA H100 80GB HBM3 · driver 570.86.16 · CUDA 12.8 · torch 2.6.0+cu124 · vllm 0.11.0 · $2.49/GPU-hour (vast.ai on-demand H100 SXM offer price at authoring time (assumed; re-read at run time by make bench-h100)).
+
+### `naive_vs_cb`
+
+| Arm | Concurrency | Requests | Errors | TTFT p50 (ms) | TTFT p95 (ms) | ITL p50 (ms) | TPOT p95 (ms) | E2E p95 (ms) | Output tok/s | Req/s | USD / 1M out |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| continuous batching | 32 | 256 | 0.0000 | 108.0 | 270.0 | 33.42 | 38.57 | 11199.6 | 839.8 | 2.92 | 0.824 |
+| continuous batching | 64 | 256 | 0.0000 | 189.0 | 432.0 | 34.22 | 39.52 | 11564.0 | 1619.0 | 5.62 | 0.427 |
+| continuous batching | 128 | 256 | 0.0000 | 351.0 | 608.1 | 54.51 | 63.33 | 18557.1 | 1980.0 | 6.87 | 0.349 |
+| naive | 32 | 256 | 0.0000 | 267130.4 | 267130.4 | — | — | 267130.4 | 34.5 | 0.12 | 20.048 |
+| naive | 64 | 256 | 0.0000 | 534260.9 | 534260.9 | — | — | 534260.9 | 34.5 | 0.12 | 20.048 |
+| naive | 128 | 256 | 0.0000 | 1068521.7 | 1068521.7 | — | — | 1068521.7 | 34.5 | 0.12 | 20.048 |
+| static batch | 32 | 256 | 0.0000 | 28012.2 | 28012.2 | — | — | 28012.2 | 329.0 | 1.14 | 2.102 |
+| static batch | 64 | 256 | 0.0000 | 35242.8 | 35242.8 | — | — | 35242.8 | 523.0 | 1.82 | 1.322 |
+| static batch | 128 | 256 | 0.0000 | 49481.9 | 49481.9 | — | — | 49481.9 | 745.0 | 2.59 | 0.928 |
+| vLLM | 32 | 256 | 0.0000 | 80.0 | 200.0 | 20.00 | 23.08 | 6723.3 | 1399.5 | 4.86 | 0.494 |
+| vLLM | 64 | 256 | 0.0000 | 140.0 | 320.0 | 20.43 | 23.60 | 6939.9 | 2697.8 | 9.37 | 0.256 |
+| vLLM | 128 | 256 | 0.0000 | 260.0 | 450.0 | 32.53 | 37.80 | 11121.0 | 3299.9 | 11.46 | 0.210 |
+
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git f76b6bf. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+
+Relative to `naive` at concurrency 64:
+
+| Arm vs baseline | Output tok/s | Req/s | TTFT p50 | TTFT p95 | ITL p95 | E2E p95 | USD / 1M out |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| continuous batching | 46.93x | 46.93x | -100.0% | -99.9% | — | -97.8% | 0.02x |
+| static batch | 15.16x | 15.16x | -93.4% | -93.4% | — | -93.4% | 0.07x |
+| vLLM | 78.20x | 78.20x | -100.0% | -99.9% | — | -98.7% | 0.01x |
+
+Relative to `static batch` at concurrency 64:
+
+| Arm vs baseline | Output tok/s | Req/s | TTFT p50 | TTFT p95 | ITL p95 | E2E p95 | USD / 1M out |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| continuous batching | 3.10x | 3.10x | -99.5% | -98.8% | — | -67.2% | 0.32x |
+| naive | 0.07x | 0.07x | +1415.9% | +1415.9% | — | +1415.9% | 15.16x |
+| vLLM | 5.16x | 5.16x | -99.6% | -99.1% | — | -80.3% | 0.19x |
+
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git f76b6bf. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+
+The other scenarios — `chaos`, `multi_lora`, `prefix_cache`, `spec_decode` — are in [docs/results.md](docs/results.md), with the plots and the raw records behind every row.
+
+<!-- results:end -->
+
+- [docs/results.md](docs/results.md) — all five scenarios: batching, prefix caching,
+  speculative decoding, multi-adapter serving and chaos, with the plots.
+- [`results/`](results/) — the raw JSON behind every row, plus `index.json`.
 
 ## License
 
