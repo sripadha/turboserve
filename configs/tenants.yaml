@@ -11,9 +11,12 @@
 #     python -c "import hashlib,sys;print(hashlib.sha256(sys.argv[1].encode()).hexdigest())" 'sk-your-key-here'
 #
 # The digests below belong to throwaway development keys whose plaintext is written in the
-# comment beside them, so a fresh clone can issue a request without minting anything. They
-# grant access to a local gateway only. Replace every one of them before deploying, and keep
-# real keys in a Secret rather than in this file (see docs/runbook.md, "rotate tenant keys").
+# comment beside them, so a fresh clone can issue a request without minting anything. That
+# plaintext is public, so these digests are credentials anyone can present: replace every one
+# of them before deploying, and keep real keys in a Secret rather than in this file (see
+# docs/runbook.md, "rotate tenant keys"). While any of them survives, `turboserve gateway
+# config-check` prints a warning and the gateway logs one at startup whenever auth is
+# required -- there is no configuration in which keeping them is correct.
 #
 # Fields
 #   id               tenant identifier; the label on every metric, log line and usage record
@@ -23,7 +26,8 @@
 #   max_concurrency  simultaneous in-flight requests; over the limit is an immediate 429
 #   allowed_models   fnmatch patterns; omit or leave empty to allow every served model
 #   adapters         tenant-visible LoRA name -> what the backend knows it as
-#   priority         higher runs first inside an engine batch
+#   priority         preemption order when the KV pool is full (higher = preempted last);
+#                    it does not reorder admission
 #   weight           share under the engine's `tenant_fair` scheduler policy
 
 version: 1

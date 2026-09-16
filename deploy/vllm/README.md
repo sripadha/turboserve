@@ -125,7 +125,7 @@ and runs load against it while deleting pods. That job uses `engine.mode: mock`,
 GitHub's hosted runners have no GPU.
 
 The vLLM path — this directory — has therefore been validated as manifests and as a
-command line, not executed: the development machine for this repository has a 6 GB
-Turing GPU and no Docker, and per the project's own rules no benchmark or GPU run happens
-there. `launch.sh` prints the exact command line it will run and exits when `DRY_RUN=1`,
-which is how the flag set is checked without a GPU.
+command line, not executed: vLLM needs an Ampere-or-newer GPU, and no benchmark or GPU run
+is published from anywhere but the measurement host. `launch.sh` prints the exact command
+line it will run and exits when `DRY_RUN=1`, which is how the flag set is checked without a
+GPU.

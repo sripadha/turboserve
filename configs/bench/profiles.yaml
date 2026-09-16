@@ -8,8 +8,9 @@
 # a figure it has not measured.
 #
 # `h100` is the published profile (1x NVIDIA H100 80GB, bf16). `dev-2060` is the same suite
-# shrunk to a 6 GB Turing laptop GPU (fp16 only, no bf16 tensor cores); it exists to prove
-# the pipeline end to end and its output is never published as a result.
+# shrunk to a small consumer GPU (about 6 GB of VRAM, fp16 only because pre-Ampere cards
+# have no bf16 tensor cores); it exists to prove the pipeline end to end and its output is
+# never published as a result.
 #
 # Parsed and validated by src/turboserve/bench/profiles.py; unknown keys are an error.
 
@@ -88,7 +89,7 @@ profiles:
         backends: [reference]
 
   dev-2060:
-    description: NVIDIA RTX 2060 6GB (Turing, fp16 only) -- smoke profile, never published.
+    description: small consumer GPU smoke profile (~6 GB, fp16 only) -- never published.
     device: cuda
     seed: 20260916
     tenants: [tenant-a, tenant-b]

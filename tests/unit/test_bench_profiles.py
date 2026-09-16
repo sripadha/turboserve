@@ -1,4 +1,4 @@
-"""Profile tests: the shipped sizes are what the specification says, and typos are errors."""
+"""Profile tests: the shipped sizes are what the profiles file declares, and typos are errors."""
 
 from __future__ import annotations
 
@@ -88,7 +88,7 @@ def test_the_dev_profile_is_small_and_fp16(profiles: dict[str, BenchProfile]) ->
     assert dev.scenarios.naive_vs_cb.concurrencies == [32]
     assert dev.scenarios.prefix_cache.shared_prefix_tokens == 512
     assert dev.scenarios.multi_lora.adapter_counts == [16, 64]
-    # Turing has no bf16 tensor cores, so no dev arm may ask for bf16.
+    # Pre-Ampere consumer cards have no bf16 tensor cores, so no dev arm may ask for bf16.
     for scenario in SCENARIO_NAMES:
         assert dev.scenario(scenario).dtype == "float16"
     # Every dev model is smaller than the h100 counterpart.

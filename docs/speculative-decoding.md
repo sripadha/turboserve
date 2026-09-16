@@ -306,10 +306,10 @@ models in the shared Hugging Face cache.
 
 ## 9. Limitations
 
-- **Nothing here has been run on a GPU in this repository.** Per `PLAN.md` §2a all development
-  and testing was CPU-only on tiny random checkpoints. The CUDA-specific paths are the ones the
-  base engine already documents (fp16 execution, memory profiling); speculation adds no kernel
-  of its own.
+- **No benchmark has been run on a GPU here.** Development and testing were CPU-only on tiny
+  random checkpoints. The CUDA-specific paths are the ones the base engine already documents
+  (fp16 execution, memory profiling); speculation adds no kernel of its own, so the
+  `gpu`-marked tests in `tests/gpu/` cover the kernels it borrows.
 - **Verification steps do not use the Triton decode kernel.** A `1+k` query length is not a
   decode-only batch, so those steps take the reference paged-attention path on every device.
   A varlen kernel over block tables would be the next thing to write.

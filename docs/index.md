@@ -5,8 +5,8 @@ engine (continuous batching, paged KV cache with automatic prefix caching, specu
 decoding, batched multi-LoRA), an OpenAI-compatible multi-tenant gateway with SLO-gated
 canaries and chaos testing, and a vLLM + Kubernetes production deployment path.
 
-Every page here is written by the owner of the code it describes, and every behavioural
-claim on it is backed by code under `src/turboserve/` or by a test under `tests/`.
+Every behavioural claim on these pages is backed by code under `src/turboserve/` or by a
+test under `tests/`; every number is rendered from a result file under `results/`.
 
 ## Pages
 
@@ -75,8 +75,9 @@ claim on it is backed by code under `src/turboserve/` or by a test under `tests/
   versions, configuration and timestamp of the run that produced them, and each rendered
   table carries a one-line provenance note saying whether the run was measured or projected.
 - Diagrams are mermaid, rendered by GitHub.
-- Anything that was *not* executed on this hardware is said so explicitly on the page that
-  claims it — see the "Limitations" section each module page ends with.
+- Anything that has *not* been executed — on a GPU, against a Kubernetes cluster, against a
+  rented instance — is said so explicitly on the page that claims it; see the "Limitations"
+  section each module page ends with.
 
 See [`../CONTRIBUTING.md`](../CONTRIBUTING.md) for the development workflow, test markers and
 module ownership, and [`../README.md`](../README.md) for the quickstart and the CLI reference.

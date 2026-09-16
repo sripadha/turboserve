@@ -141,8 +141,9 @@ printf %s 'sk-your-key-here' | sha256sum          # identical digest
 ```
 
 A `Tenant` carries `rpm`, `tpm`, `max_concurrency`, `allowed_models` (fnmatch patterns; empty
-means all), `adapters` (tenant-visible name → what the backend calls it), `priority` and
-`weight`. `enabled: false` authenticates the key and then refuses with 403, which is how an
+means all), `adapters` (tenant-visible name → what the backend calls it), `priority` (who
+the engine preempts first when the KV pool is full -- not an admission order) and `weight`
+(the tenant's share under the `tenant_fair` admission policy). `enabled: false` authenticates the key and then refuses with 403, which is how an
 account is suspended without deleting its credentials.
 
 Two rules worth restating:
@@ -373,8 +374,10 @@ curl -s localhost:8000/v1/chat/completions \
 ```
 
 The keys in `configs/tenants.yaml` are throwaway development keys whose plaintext is written
-beside their digests, so a fresh clone can issue a request without minting anything. Replace
-every one of them before deploying, and keep real keys in a Secret.
+beside their digests, so a fresh clone can issue a request without minting anything — which
+also means they are public. Replace every one of them before deploying, and keep real keys in
+a Secret. `turboserve gateway config-check` names any tenant that still accepts one, and the
+gateway logs the same warning at startup whenever authentication is required.
 
 In code:
 

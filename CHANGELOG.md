@@ -110,9 +110,28 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - README: a mermaid architecture diagram of the request path — client through the gateway's
   auth, quota and routing stages to a backend and, for the local backend, into the engine's
   scheduler/runner/sampler step loop — with the metrics, canary and chaos edges drawn as
-  control flow. PLAN.md §4 requires it and `docs/index.md` already promised mermaid diagrams.
+  control flow, which `docs/index.md` already promised.
 
 ### Changed
+
+- The rendered results pages and the README's results block carry a **Suite** line next to
+  the hardware line: how many runs, over what wall-clock span, and what that span costs at
+  the `$/GPU-hour` the files recorded. Like every other number on those pages it is computed
+  from `results/**/*.json`, so the cost of reproducing the tables is not a figure anybody
+  typed.
+- `priority` is documented as what the scheduler does with it — it decides which running
+  sequence is preempted when the KV pool is full, and does not reorder admission. The API
+  field, the tenant model and `configs/tenants.yaml` said "higher runs first", which
+  `docs/scheduler.md` had always contradicted.
+- The Helm chart's copies of the Grafana dashboard and the Prometheus rules are real files
+  kept in step by `make sync-chart-files` (and a unit test) instead of symlinks. Helm follows
+  a symlink inside a chart, but warns on every `lint`, `template` and `package`, and a
+  checkout without symlink support gets a dangling file.
+- CI downloads the tiny random checkpoints into a cached Hugging Face home and runs the suite
+  with `TURBOSERVE_REQUIRE_TINY_MODELS=1`, which turns "no cached tiny model" from a skip into
+  a failure. Without it, 114 tests — the model runner, continuous batching, prefix caching,
+  speculative decoding and the gateway-to-engine path — skipped themselves on a hosted runner
+  and the badge stayed green.
 
 - The report renderer draws one relative table per *declared* baseline inside a concurrency
   group, instead of measuring every arm against whichever control was written first. Each
@@ -140,6 +159,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exits is what lets CI smoke-run the image; the chart and compose file name the command.
 
 ### Fixed
+
+- `tenant_fair` admission no longer lets an idle tenant bank credit. The queue now carries a
+  self-clocked virtual time (SCFQ) and a tenant that becomes backlogged again restarts at
+  `max(its own virtual time, that clock)`. The floor it used before was the minimum over the
+  *backlogged* tenants, which is `0.0` when the queue has drained, so a tenant that had been
+  served once and then gone quiet came back with its stale virtual time intact and took every
+  admission until it caught up — the exact behaviour the class docstring and
+  `docs/scheduler.md` promised was impossible. The existing test only covered a tenant that
+  had never been served, which took the branch that worked.
+- The router reports a pre-first-byte failure to the canary controller even when it retries
+  the request away onto another replica. A canary that failed every request on connect used to
+  produce no canary-lane samples at all, so the gate sat below `min_requests` on HOLD until
+  its stall timeout instead of rolling back on a 100% error rate.
+- `turboserve gateway config-check` and the gateway's startup path name any tenant still
+  accepting one of the example API keys shipped in `configs/tenants.yaml`, whose plaintext is
+  printed in that file.
 
 - `RequestRecord.tpot_ms` is `None`, not `0.0`, when every token was observed at the same
   instant — what the blocking `transformers` baselines produce. A zero in a time-per-token

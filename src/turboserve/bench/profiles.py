@@ -5,7 +5,7 @@ else. It names the models, the number of requests, the prompt and completion len
 concurrencies and the scenario-specific knobs (shared prefix length, speculative ``k``,
 adapter count). Every scenario takes ``--profile h100|dev-2060`` and reads its sizes from
 here, so the same scenario code produces a publishable run on a rented H100 and a seconds-
-long smoke run on a 6 GB laptop GPU without a branch in the scenario.
+long smoke run on a small consumer GPU without a branch in the scenario.
 
 Two deliberate omissions:
 
@@ -16,8 +16,8 @@ Two deliberate omissions:
   schema has a place for one (:class:`SLOSpec`) because a team running this in their own
   fleet will want it pinned in YAML; the profiles shipped here leave it unset.
 * **No paths to weights.** Models are named by their Hugging Face id and resolved by the
-  scenario, because the measurement host downloads them and the development machine may
-  not have them at all.
+  scenario, because the measurement host downloads them and a development checkout may not
+  have them at all.
 
 The file is validated strictly (``extra="forbid"``): a typo in a profile is a loud error
 before a GPU-hour is spent, not a silently ignored key.

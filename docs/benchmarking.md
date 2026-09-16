@@ -177,7 +177,7 @@ token would report throughput over a workload nobody specified.
 | Profile | Machine | Notes |
 | --- | --- | --- |
 | `h100` | 1× NVIDIA H100 80GB SXM, bf16 | the published measurement target |
-| `dev-2060` | NVIDIA RTX 2060 6GB (Turing) | fp16 only — no bf16 tensor cores; smoke runs, never published |
+| `dev-2060` | a small consumer GPU, about 6 GB | fp16 only — pre-Ampere cards have no bf16 tensor cores; smoke runs, never published |
 
 A profile names the models, request counts, input and output token ranges, concurrencies and
 the scenario-specific knobs (shared prefix length, speculative `k`, adapter count and rank,
@@ -348,9 +348,9 @@ Streams in the tests are small async generators standing in for a backend, so th
 - **ITL for multi-token chunks is an attribution, not an observation.** The tokens genuinely
   arrived together; dividing the interval among them is the least misleading treatment
   available, but it is a model of what happened, not a measurement of each token.
-- **No results were produced on this machine.** The development GPU here is a 6 GB Turing
-  card; it can run `dev-2060` smoke runs to prove the pipeline works end to end, and those
-  are never published. Published results come from the `h100` profile on rented hardware,
-  and until that run happens the `h100` tables are the projected reference documents
-  described under [Provenance](#provenance), labelled as such under every table.
+- **Only the `h100` profile is published.** The `dev-2060` profile exists to prove the
+  pipeline works end to end on a small consumer GPU; its output is never published.
+  Published results come from the `h100` profile on rented hardware, and until that run
+  happens the `h100` tables are the projected reference documents described under
+  [Provenance](#provenance), labelled as such under every table.
 - **`sharegpt` needs a local copy of the dataset**; nothing in this repository downloads it.

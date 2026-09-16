@@ -68,8 +68,8 @@ DeviceName = Literal["auto", "cuda", "cpu"]
 DTypeName = Literal["auto", "float16", "bfloat16", "float32"]
 SchedulerPolicy = Literal["fcfs", "tenant_fair"]
 
-#: The dtypes the engine supports. bf16 is listed but is not selected by ``auto``: the
-#: development GPU here is Turing (sm_75) and has no bf16 tensor cores.
+#: The dtypes the engine supports. bf16 is listed but is not selected by ``auto``, because
+#: pre-Ampere CUDA devices have no bf16 tensor cores.
 DTYPE_BY_NAME: dict[str, torch.dtype] = {
     "float16": torch.float16,
     "bfloat16": torch.bfloat16,
@@ -566,8 +566,8 @@ class EngineConfig(BaseModel):
     def resolved_dtype(self) -> torch.dtype:
         """Return a concrete dtype: fp16 on CUDA, fp32 on CPU when ``dtype == "auto"``.
 
-        bf16 is never chosen automatically because the development GPU (Turing, sm_75) has
-        no bf16 tensor cores; an H100 run sets ``dtype="bfloat16"`` explicitly.
+        bf16 is never chosen automatically because pre-Ampere CUDA devices have no bf16
+        tensor cores; an H100 run sets ``dtype="bfloat16"`` explicitly.
         """
         if self.dtype != "auto":
             return resolve_dtype(self.dtype)

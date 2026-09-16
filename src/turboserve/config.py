@@ -111,8 +111,8 @@ class Settings(BaseSettings):
         """Return a concrete dtype name.
 
         ``auto`` means fp16 on CUDA and fp32 on CPU. bf16 is never chosen automatically:
-        the target GPU here is Turing (sm_75), which has no bf16 tensor cores, and CPU
-        bf16 matmuls in torch are slower than fp32.
+        pre-Ampere CUDA devices have no bf16 tensor cores, and CPU bf16 matmuls in torch
+        are slower than fp32. An H100 run asks for ``dtype="bfloat16"`` explicitly.
         """
         if self.dtype != "auto":
             return self.dtype

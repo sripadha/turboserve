@@ -109,7 +109,16 @@ somebody switches it off. Once there is enough evidence, three things can fail a
 
 **Error rate.** The failed fraction of the canary's requests in the window exceeds
 `max_error_rate`. Failures count in the error rate but are excluded from the latency
-percentiles — a request that failed in three milliseconds must not *improve* p95.
+percentiles — a request that failed in three milliseconds must not *improve* p95. What is
+counted is *attempts*, not client-visible outcomes: when the router retries a pre-first-byte
+failure onto another replica the client still gets a clean completion, but the attempt is
+reported as a canary-lane failure anyway. Otherwise a canary that is hard-down would be
+retried away, produce no samples at all, and sit under `min_requests` on HOLD until the
+stall timeout instead of rolling back on a 100% error rate. Requests a replica *rejects* --
+an unknown adapter, a sampling parameter it will not take -- count as well, deliberately: a
+build that refuses what the stable lane accepts is the kind of regression this gate exists
+for. The cost is that a client sending malformed requests raises both lanes' error rates,
+so `max_error_rate` is a threshold on the deployment's traffic, not on the build alone.
 
 **Absolute latency.** The canary's p95 TTFT exceeds `max_p95_ttft_ms`. Opt-in, and unset by
 default: an absolute millisecond budget is a property of a particular model on particular
@@ -358,10 +367,10 @@ uv run pytest tests/unit/test_canary_controller.py tests/unit/test_canary_k8s.py
 
 ### 9. Limitations
 
-- **Not executed here.** No Kubernetes cluster, Argo Rollouts installation or Prometheus
-  server was available on the development machine (Docker is unavailable under this WSL2
-  setup), so the `kubectl` argv and the PromQL responses are exercised against fakes, not
-  against a live cluster. The kind e2e job in CI is where those run for real.
+- **Not run against a live cluster from a checkout.** The `kubectl` argv and the PromQL
+  responses are exercised against fakes rather than against a real Kubernetes cluster,
+  Argo Rollouts installation or Prometheus server. The kind e2e job in CI is where those
+  run for real.
 - The controller gates on error rate and on TTFT/E2E p95. It does not do statistical
   significance testing, Mann-Whitney comparison or multi-metric scoring the way Kayenta
   does; the ratio gate is a threshold on a ratio, not a hypothesis test.
@@ -674,10 +683,9 @@ requests) and never about how long anything took.
 - **Quota state is per process.** The harness builds a router with no limiter registry, so a
   chaos run exercises routing, health and retries but not the gateway's per-tenant quotas.
   Those have their own tests in `tests/unit/test_gateway_limits.py`.
-- **Nothing here has been run against a cluster from this repository's CI.** The Chaos Mesh
-  manifests and the kind end-to-end script are exercised where Docker exists; the local
-  development machine has none, so the in-process and subprocess paths are what the test
-  suite covers.
+- **The Chaos Mesh manifests run only where Docker does.** They and the kind end-to-end
+  script are exercised in `.github/workflows/kind-e2e.yml`; on a checkout without a Docker
+  daemon the in-process and subprocess fault paths are what the test suite covers.
 
 ---
 

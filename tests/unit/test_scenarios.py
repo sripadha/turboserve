@@ -4,7 +4,8 @@ Everything here runs on CPU in seconds. The end-to-end scenario tests drive the 
 engines against a cached tiny-random Qwen2 checkpoint with a handful of very short
 requests: the point is that a scenario produces a *valid, complete* result file with the
 conventions the report renderer reads, not that the numbers in it mean anything. The
-figures such a run produces are never published -- see PLAN.md 1 and 2a.
+figures such a run produces are never published -- see CONTRIBUTING.md, "No numbers
+without a results JSON".
 
 The load-generator test binds a real loopback socket and serves the mock gateway from a
 uvicorn server in a thread, because the contract the Kubernetes end-to-end job depends on

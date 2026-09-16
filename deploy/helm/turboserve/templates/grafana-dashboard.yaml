@@ -1,9 +1,10 @@
 {{/*
 The Grafana dashboard, as a ConfigMap for the kube-prometheus-stack sidecar to import.
 
-The JSON is the same file deploy/grafana/dashboards/turboserve.json that docker-compose
-provisions, reached through a symlink under files/ so a panel fixed in one place is fixed
-in both. The default label (grafana_dashboard: "1") is the sidecar's default selector;
+The JSON is a copy of deploy/grafana/dashboards/turboserve.json, the file docker-compose
+provisions; `.Files.Get` cannot read outside the chart. `make sync-chart-files`
+regenerates it and a unit test asserts the two are byte-identical, so a panel fixed in one
+place is fixed in both. The default label (grafana_dashboard: "1") is the sidecar's default selector;
 change monitoring.grafanaDashboard.labels if the Grafana install uses another.
 */}}
 {{- if .Values.monitoring.grafanaDashboard.enabled }}

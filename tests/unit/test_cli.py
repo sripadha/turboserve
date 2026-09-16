@@ -66,7 +66,7 @@ def test_hwinfo_indent_zero_is_one_line() -> None:
 # imports them together. Without these tests a module could stop exporting its app, or be
 # renamed, and the failure would surface as a missing command in a deployment manifest.
 
-#: Every command the specification's CLI section names, and the ones the manifests call.
+#: Every command the README's CLI table names, and the ones the manifests call.
 EXPECTED_COMMANDS: tuple[str, ...] = (
     "version",
     "hwinfo",

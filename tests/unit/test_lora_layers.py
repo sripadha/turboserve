@@ -385,8 +385,7 @@ def test_mixed_adapters_in_one_batch_equal_the_merged_models(
     """One packed step, three sequences, two adapters and the base model.
 
     Each sequence's logits must match what a separately merged model produces for that
-    sequence alone. This is the test the spec names: mixed adapters in one batch within
-    1e-4 of PEFT.
+    sequence alone -- mixed adapters in one batch, within 1e-4 of PEFT.
     """
     model = CausalLM.from_pretrained(
         tiny_qwen2_path, dtype=torch.float32, device="cpu", local_files_only=True

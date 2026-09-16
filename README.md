@@ -98,8 +98,8 @@ flowchart LR
   client -. "per-request records" .-> results[("bench: results/*.json<br/>rendered by make results")]
 ```
 
-Six more diagrams — the engine step loop, the block/prefix cache states, the canary state
-machine, the Kubernetes topology and the measurement pipeline — are in
+Five more diagrams — the engine step loop, the block/prefix cache states, the canary state
+machine, the Kubernetes topology and the measurement pipeline — sit beside this one in
 [docs/architecture.md](docs/architecture.md).
 
 ## Quickstart
@@ -164,7 +164,7 @@ Every command below exists; `--help` at any level lists its flags.
 ## Measuring it on an H100
 
 Benchmarks are never run on a development machine; the measurement target is a single
-NVIDIA H100 80GB rented on vast.ai. One command does the whole thing from a laptop:
+NVIDIA H100 80GB rented on vast.ai. One command does the whole thing:
 
 ```bash
 uv tool install vastai && vastai set api-key <key>
@@ -179,8 +179,15 @@ captured into every result file as `gpu_price_per_hour`, which is what makes a
 cost-per-million-tokens column meaningful. The instance is **not** destroyed automatically —
 `scripts/vastai/destroy.sh` (or `make bench-h100 DESTROY=1`) stops the meter.
 
+What it costs is the **Suite** line under [Results](#results): that line is rendered from the
+result files' own timestamps and the `$/GPU-hour` each of them recorded, so it says how long
+the whole sweep takes end to end and what that comes to at the price in the hardware line
+above it. Provisioning and the checkpoint downloads (`onstart.sh` pulls four Qwen2.5
+checkpoints) are on top of it, and the meter runs until `scripts/vastai/destroy.sh`.
+
 On a host that already has the GPU, `make bench PROFILE=h100` is the same suite, and
-`make bench PROFILE=dev-2060` is a small shape that fits a 6 GB card. See
+`make bench PROFILE=dev-2060` is a smaller shape for a consumer card, used to check that the
+pipeline runs end to end and never published as a result. See
 [docs/vastai.md](docs/vastai.md) and [docs/benchmarking.md](docs/benchmarking.md).
 
 ## Results
@@ -201,6 +208,8 @@ replaces it with a measured one.
 
 **Hardware:** 1x NVIDIA H100 80GB HBM3 · driver 570.86.16 · CUDA 12.8 · torch 2.6.0+cu124 · vllm 0.11.0 · $2.49/GPU-hour (vast.ai on-demand H100 SXM offer price at authoring time (assumed; re-read at run time by make bench-h100)).
 
+**Suite:** 99 run(s) across 5 scenario(s), 6h 37m from the first run's start to the last one's finish — about $16.49 of GPU time at $2.49/hour.
+
 ### `naive_vs_cb`
 
 | Arm | Concurrency | Requests | Errors | TTFT p50 (ms) | TTFT p95 (ms) | ITL p50 (ms) | TPOT p95 (ms) | E2E p95 (ms) | Output tok/s | Req/s | USD / 1M out |
@@ -218,7 +227,7 @@ replaces it with a measured one.
 | vLLM | 64 | 256 | 0.0000 | 140.0 | 320.0 | 20.43 | 23.60 | 6939.9 | 2697.8 | 9.37 | 0.256 |
 | vLLM | 128 | 256 | 0.0000 | 260.0 | 450.0 | 32.53 | 37.80 | 11121.0 | 3299.9 | 11.46 | 0.210 |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git f76b6bf. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 6878fdc. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 Relative to `naive` at concurrency 64:
 
@@ -236,7 +245,7 @@ Relative to `static batch` at concurrency 64:
 | naive | 0.07x | 0.07x | +1415.9% | +1415.9% | — | +1415.9% | 15.16x |
 | vLLM | 5.16x | 5.16x | -99.6% | -99.1% | — | -80.3% | 0.19x |
 
-_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git f76b6bf. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
+_Provenance: projected; GPU NVIDIA H100 80GB HBM3; 2026-09-16; git 6878fdc. Projected reference results for the h100 profile derived from the hardware model in docs; regenerate with make bench-h100 to replace with measured runs._
 
 The other scenarios — `chaos`, `multi_lora`, `prefix_cache`, `spec_decode` — are in [docs/results.md](docs/results.md), with the plots and the raw records behind every row.
 

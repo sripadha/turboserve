@@ -368,7 +368,8 @@ invalidate them.
   engine does not use `generate`.
 - **No prompt logprobs.** `SamplingParams.logprobs` yields the sampled token's
   log-probability; per-position prompt logprobs are not computed.
-- **Nothing here has been run on a GPU in this repository.** Per `PLAN.md` §2a, everything
-  above was verified on CPU with tiny-random checkpoints. The CUDA paths (`mem_get_info`
-  probing, fp16 execution, the Triton decode kernel underneath) are exercised in the
-  measurement phase on a rented H100.
+- **No benchmark has been run on a GPU here.** Everything above was verified on CPU with
+  tiny-random checkpoints, plus the `gpu`-marked kernel tests in `tests/gpu/`, which run in
+  seconds on a small card. The remaining CUDA paths (`mem_get_info` probing, fp16 execution
+  at production shapes) are first exercised by the measurement run on a rented H100; see
+  CONTRIBUTING.md, ["What has never been executed here"](../CONTRIBUTING.md#what-has-never-been-executed-here).

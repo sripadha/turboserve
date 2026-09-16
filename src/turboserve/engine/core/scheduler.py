@@ -310,12 +310,17 @@ class _WaitQueue:
     tenant a share of admissions proportional to its weight and, more importantly, bounds
     how long any tenant can be made to wait: a tenant's virtual time only stands still while
     it is not being served, so it necessarily becomes the minimum after a bounded number of
-    admissions by others. A tenant that leaves and comes back starts at the current minimum
-    rather than at its stale value, so an idle tenant cannot bank credit and then monopolise
-    the engine.
+    admissions by others.
+
+    The virtual clock is self-clocked (SCFQ, Golestani 1994): ``_now`` is the virtual time
+    of the request admitted most recently, and a tenant that becomes backlogged again
+    restarts at ``max(its own virtual time, _now)``. Without that floor an idle tenant would
+    keep the small virtual time it stopped at, bank credit for the whole idle period and
+    then monopolise admissions until it caught up. The floor is what makes the fair share a
+    share of the *current* epoch rather than of all time.
     """
 
-    __slots__ = ("_fifo", "_queues", "_tenant_fair", "_vtime", "_weights")
+    __slots__ = ("_fifo", "_now", "_queues", "_tenant_fair", "_vtime", "_weights")
 
     def __init__(self, *, tenant_fair: bool, weights: dict[str, float] | None = None) -> None:
         self._tenant_fair = tenant_fair
@@ -323,6 +328,7 @@ class _WaitQueue:
         self._fifo: deque[Sequence] = deque()
         self._queues: dict[str, deque[Sequence]] = {}
         self._vtime: dict[str, float] = {}
+        self._now = 0.0
 
     def weight_of(self, tenant_id: str) -> float:
         """Configured weight of a tenant; unconfigured tenants get ``1.0``."""
@@ -336,9 +342,11 @@ class _WaitQueue:
         tenant = seq.tenant_id
         queue = self._queues.get(tenant)
         if queue is None:
+            # Becoming backlogged again: never earlier than the virtual clock, so the time
+            # spent idle earns nothing.
             queue = deque()
             self._queues[tenant] = queue
-            self._vtime[tenant] = max(self._vtime.get(tenant, 0.0), self._min_vtime())
+            self._vtime[tenant] = max(self._vtime.get(tenant, 0.0), self._now)
         queue.append(seq)
 
     def peek(self) -> Sequence | None:
@@ -358,6 +366,7 @@ class _WaitQueue:
         queue = self._queues[tenant]
         seq = queue.popleft()
         self._vtime[tenant] += 1.0 / self.weight_of(tenant)
+        self._now = self._vtime[tenant]
         if not queue:
             del self._queues[tenant]
         return seq
@@ -386,10 +395,7 @@ class _WaitQueue:
         self._fifo.clear()
         self._queues.clear()
         self._vtime.clear()
-
-    def _min_vtime(self) -> float:
-        active = [self._vtime[tenant] for tenant in self._queues if tenant in self._vtime]
-        return min(active) if active else 0.0
+        self._now = 0.0
 
     def _next_tenant(self) -> str | None:
         if not self._queues:

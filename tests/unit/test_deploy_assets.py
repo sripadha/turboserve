@@ -8,8 +8,8 @@ is everything those tools cannot see:
 
 * the Grafana dashboard and the Prometheus rules only ever query metric names the gateway
   actually exports (``docs/kubernetes.md`` is the contract),
-* the chart's copies of the dashboard and the rules are symlinks to the canonical files, so
-  a fix in one place cannot leave the other behind,
+* the chart's copies of the dashboard and the rules are byte-identical to the canonical
+  files, so a fix in one place cannot leave the other behind,
 * the error-rate gate of the kind job fails for both of the reasons it must, and
 * every shell script is executable and has a shebang.
 
@@ -219,19 +219,23 @@ def test_recording_rules_are_defined_before_the_alerts_that_use_them() -> None:
 
 
 @pytest.mark.parametrize(
-    ("link", "target"),
+    ("name", "canonical"),
     [
         ("files/grafana-dashboard.json", DASHBOARD),
         ("files/prometheus-rules.yaml", RULES),
     ],
 )
-def test_chart_files_are_symlinks_to_the_canonical_assets(link: str, target: Path) -> None:
-    """Helm cannot read files outside its chart directory, and a copy would drift. Helm
-    follows symlinks when it loads or packages a chart, so the chart links to the one file
-    that docker-compose also mounts."""
-    path = CHART / link
-    assert path.is_symlink(), f"{link} must be a symlink, not a copy"
-    assert path.resolve() == target.resolve()
+def test_chart_files_match_the_canonical_assets(name: str, canonical: Path) -> None:
+    """Helm's ``.Files.Get`` cannot read outside the chart directory, so the chart needs
+    its own copy of each shared asset. A symlink would also work on Linux, but ``helm
+    lint``/``template``/``package`` warn on every invocation and a checkout without symlink
+    support gets a dangling file, so these are real copies kept honest here instead.
+    ``make sync-chart-files`` regenerates them."""
+    path = CHART / name
+    assert not path.is_symlink(), f"{name} must be a real file, not a symlink"
+    assert path.read_bytes() == canonical.read_bytes(), (
+        f"{name} has drifted from {canonical.name}; run `make sync-chart-files`"
+    )
 
 
 def test_chart_metadata_is_present() -> None:

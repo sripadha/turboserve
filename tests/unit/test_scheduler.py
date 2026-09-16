@@ -11,6 +11,7 @@ every tenant.
 from __future__ import annotations
 
 import random
+from itertools import groupby
 
 import pytest
 
@@ -456,6 +457,33 @@ def test_a_returning_tenant_cannot_bank_credit_while_idle() -> None:
     # A newly active tenant starts at the current minimum virtual time: it is served
     # promptly, but it does not get to claim the four turns it "missed".
     assert admission_order(scheduler, 4) == ["a", "b", "a", "b"]
+
+
+def test_a_tenant_that_was_served_then_went_idle_cannot_bank_credit() -> None:
+    """The returning-tenant branch, which the test above does not reach.
+
+    Above, ``a`` has never been served, so it is absent from the virtual-time map and any
+    floor at all works. Here ``a`` is served once, goes idle while ``b`` runs up a large
+    virtual time, and comes back: its stored virtual time is stale and small, so unless the
+    floor is taken from the *other* backlogged tenants it would win every comparison until
+    it caught up -- ten consecutive admissions, which is the starvation the docstring
+    promises cannot happen.
+    """
+    scheduler = fair_scheduler({"a": 1.0, "b": 1.0})
+    scheduler.add_request("a-first", [1, 2], SamplingParams(max_tokens=1), tenant_id="a")
+    assert admission_order(scheduler, 1) == ["a"]
+    for index in range(50):
+        scheduler.add_request(f"b{index}", [1, 2], SamplingParams(max_tokens=1), tenant_id="b")
+    assert admission_order(scheduler, 50) == ["b"] * 50
+    for index in range(10):
+        for tenant in ("a", "b"):
+            scheduler.add_request(
+                f"{tenant}-late{index}", [3, 4], SamplingParams(max_tokens=1), tenant_id=tenant
+            )
+    order = admission_order(scheduler, 20)
+    assert order.count("a") == 10
+    assert max(len(list(run)) for _, run in groupby(order)) <= 2
+    assert order[:4] == ["a", "b", "a", "b"]
 
 
 def test_fcfs_admits_strictly_in_arrival_order() -> None:

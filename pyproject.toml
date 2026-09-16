@@ -53,8 +53,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Not installed by default and not installable on this machine's Turing GPU;
-# kept so the production vLLM path can be exercised on Ampere+ hardware.
+# Not installed by default: vLLM needs an Ampere-or-newer CUDA GPU, which a CPU-only or
+# older-GPU checkout does not have. Kept as an extra so the production vLLM path installs
+# with one flag on hardware that can run it.
 vllm = ["vllm>=0.8"]
 
 [project.urls]

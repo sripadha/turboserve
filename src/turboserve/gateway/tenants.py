@@ -19,6 +19,7 @@ Two decisions are worth stating, because they shape every call site:
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import logging
 import re
 from collections.abc import Mapping
@@ -35,6 +36,8 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "DEFAULT_TENANT_ID",
+    "EXAMPLE_API_KEYS",
+    "EXAMPLE_KEY_DIGESTS",
     "Tenant",
     "TenantConfigError",
     "TenantRegistry",
@@ -45,6 +48,25 @@ __all__ = [
 DEFAULT_TENANT_ID = "default"
 
 _SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+
+#: The throwaway keys shipped with ``configs/tenants.yaml`` so that a fresh clone can issue
+#: a request without minting anything. Their plaintext is printed in that file's comments
+#: and in ``docs/gateway.md``, so they are public: a deployment that copies the example file
+#: and forgets to replace the digests is accepting credentials anyone can read off GitHub.
+#: :meth:`TenantRegistry.tenants_with_example_keys` finds them, ``gateway config-check``
+#: prints them, and the gateway logs a warning at startup when authentication is required.
+EXAMPLE_API_KEYS: tuple[str, ...] = (
+    "sk-turboserve-acme-dev",
+    "sk-turboserve-acme-dev-rotating",
+    "sk-turboserve-globex-dev",
+    "sk-turboserve-labs-dev",
+    "sk-turboserve-suspended-dev",
+)
+
+#: SHA-256 digests of :data:`EXAMPLE_API_KEYS`, in the form ``tenants.yaml`` stores.
+EXAMPLE_KEY_DIGESTS: frozenset[str] = frozenset(
+    hashlib.sha256(key.encode("utf-8")).hexdigest() for key in EXAMPLE_API_KEYS
+)
 
 
 class TenantConfigError(ValueError):
@@ -58,7 +80,8 @@ class Tenant(BaseModel):
     :class:`~turboserve.gateway.limits.TenantLimiter`; ``None`` means unlimited, which is
     what the development default uses so that a fresh checkout is not rate limited into
     uselessness. ``priority`` and ``weight`` are passed through to the engine's scheduler:
-    ``priority`` orders requests within a batch, ``weight`` is the tenant's share under the
+    ``priority`` decides who is preempted first when the KV pool runs out -- it does not
+    reorder admission -- and ``weight`` is the tenant's share under the
     ``tenant_fair`` scheduler policy.
     """
 
@@ -232,6 +255,18 @@ class TenantRegistry:
     def ids(self) -> list[str]:
         """Tenant ids, sorted."""
         return sorted(self._tenants)
+
+    def tenants_with_example_keys(self) -> list[str]:
+        """Ids of tenants still holding one of the shipped example key digests, sorted.
+
+        Empty for any configuration that has replaced them, which is what a real deployment
+        must look like.
+        """
+        return sorted(
+            tenant.tenant_id
+            for tenant in self._tenants.values()
+            if EXAMPLE_KEY_DIGESTS.intersection(tenant.keys_sha256)
+        )
 
     def key_index(self) -> dict[str, Tenant]:
         """Map every configured key digest to its tenant.

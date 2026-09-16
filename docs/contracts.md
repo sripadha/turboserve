@@ -220,8 +220,8 @@ rebuilt in lock-step. The engine passes the dict through and the owning module v
 
 `resolved_device()` and `resolved_dtype()` turn `"auto"` into concrete values: CUDA when
 torch reports a device, fp16 on CUDA and fp32 on CPU. bf16 is never selected automatically —
-the development GPU is Turing (sm_75) and has no bf16 tensor cores, so an H100 run asks for
-`dtype="bfloat16"` explicitly. `EngineConfig.from_settings(Settings)` bridges the
+pre-Ampere GPUs have no bf16 tensor cores and would fall back to a slow path — so an H100
+run asks for `dtype="bfloat16"` explicitly. `EngineConfig.from_settings(Settings)` bridges the
 `TURBOSERVE_*` environment settings into an engine config.
 
 ---

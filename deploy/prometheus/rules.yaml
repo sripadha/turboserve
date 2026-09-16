@@ -5,10 +5,12 @@
 #   * a plain Prometheus server loads it through `rule_files:` (see prometheus.yml, which is
 #     what docker-compose.yml mounts);
 #   * the Helm chart embeds it verbatim in a PrometheusRule custom resource
-#     (deploy/helm/turboserve/templates/prometheusrule.yaml reads it through .Files.Get, and
-#     deploy/helm/turboserve/files/prometheus-rules.yaml is a symlink to this file so the
-#     two can never drift). The `spec:` of a PrometheusRule is exactly the `groups:` list
-#     below, which is why this file has no other top-level key.
+#     (deploy/helm/turboserve/templates/prometheusrule.yaml reads it through .Files.Get,
+#     which cannot leave the chart directory, so deploy/helm/turboserve/files/
+#     prometheus-rules.yaml is a copy of this file kept in step by `make sync-chart-files`
+#     and asserted byte-identical by tests/unit/test_deploy_assets.py). The `spec:` of a
+#     PrometheusRule is exactly the `groups:` list below, which is why this file has no
+#     other top-level key.
 #
 # Every series referenced here is exported by the gateway on /metrics
 # (src/turboserve/gateway/metrics.py). The label sets differ per series -- requests and the

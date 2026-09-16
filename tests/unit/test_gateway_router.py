@@ -11,6 +11,7 @@ import pytest
 from turboserve.engine.core.types import FinishReason
 from turboserve.gateway.backends.mock import MockBackend
 from turboserve.gateway.backends.protocol import (
+    BackendError,
     BackendOverloadedError,
     BackendRequestError,
     BackendUnavailableError,
@@ -391,6 +392,44 @@ async def test_an_unexpected_backend_exception_after_the_first_byte_is_observed(
     events = [routed async for routed in router.generate(make_request())]
     assert events[-1].is_error
     assert [obs[1] for obs in canary.observations] == [False]
+
+
+async def test_a_failure_retried_away_still_reaches_the_canary_controller() -> None:
+    """The gate counts attempts, not client-visible outcomes.
+
+    A canary replica that is hard-down fails before the first byte, the router retries on to
+    the stable lane, and the client gets a clean completion. If that attempt were not
+    observed, the canary lane would produce *zero* samples rather than a 100% error rate:
+    ``choose_lane`` would stop drawing it once it was marked unhealthy, and the controller
+    would sit below ``min_requests`` on HOLD until its stall timeout instead of rolling back.
+    """
+    canary = FakeCanary(100.0)
+    router = Router(canary=canary, rng=FirstReplicaRng(), max_attempts=3)
+    router.add_backend(
+        "m",
+        ScriptedBackend("c", fail_with=BackendUnavailableError("refused"), after_tokens=0),
+        lane="canary",
+    )
+    router.add_backend("m", ScriptedBackend("s", tokens=2), lane="stable")
+
+    events = await route(router)
+    assert {event.backend for event in events} == {"s"}
+    assert canary.observations[0][:2] == ("canary", False)
+    assert canary.observations[1][:2] == ("stable", True)
+
+
+async def test_a_non_retryable_failure_before_the_first_byte_is_observed() -> None:
+    """Same rule when the attempt is not retried: the replica still produced an error."""
+    canary = FakeCanary(100.0)
+    router = Router(canary=canary, rng=FirstReplicaRng())
+    router.add_backend(
+        "m",
+        ScriptedBackend("c", fail_with=ZeroDivisionError("backend bug"), after_tokens=0),
+        lane="canary",
+    )
+    with pytest.raises(BackendError):
+        await route(router)
+    assert [obs[:2] for obs in canary.observations] == [("canary", False)]
 
 
 async def test_a_controller_that_raises_does_not_break_serving() -> None:

@@ -549,7 +549,12 @@ class Router:
         ttft_s: float | None,
         e2e_s: float | None,
     ) -> None:
-        """Feed a finished request to the canary controller, if there is one."""
+        """Feed one *attempt* to the canary controller, if there is one.
+
+        Every attempt is reported, including one that is retried away before the client sees
+        anything, so the canary's error rate describes the replica rather than the router's
+        ability to hide it.
+        """
         if self._canary is None:
             return
         try:
@@ -612,8 +617,13 @@ class Router:
                             )
                 except BackendError as exc:
                     self._mark_failure(entry, exc)
+                    # Observed even when the attempt is about to be retried away. The gate
+                    # measures *attempts*, not client-visible outcomes: a canary replica that
+                    # fails every request before the first byte would otherwise contribute no
+                    # samples at all, and the controller would sit on HOLD until its stall
+                    # timeout instead of rolling back on a 100% error rate.
+                    self._observe(entry, ok=False, ttft_s=None, e2e_s=None)
                     if started:
-                        self._observe(entry, ok=False, ttft_s=None, e2e_s=None)
                         yield RoutedEvent(
                             event=TokenEvent.failure(
                                 req.request_id, str(exc), finish_reason=FinishReason.ABORT
@@ -641,9 +651,13 @@ class Router:
                         f"{entry.name} failed: {exc}", backend=entry.name
                     )
                     self._mark_failure(entry, wrapped)
+                    # Observed before the re-raise for the same reason as above. A rejected
+                    # request does not condemn the replica (see _mark_failure) but it is
+                    # still a failed request on that lane, and a build that refuses what the
+                    # stable lane accepts is what the gate is for.
+                    self._observe(entry, ok=False, ttft_s=None, e2e_s=None)
                     if not started:
                         raise wrapped from exc
-                    self._observe(entry, ok=False, ttft_s=None, e2e_s=None)
                     yield RoutedEvent(
                         event=TokenEvent.failure(
                             req.request_id, str(wrapped), finish_reason=FinishReason.ABORT

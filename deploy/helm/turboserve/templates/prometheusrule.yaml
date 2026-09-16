@@ -2,10 +2,11 @@
 SLO alerts, as a PrometheusRule.
 
 The rule bodies are not written here: `.Files.Get` pulls in files/prometheus-rules.yaml,
-which is a symlink to deploy/prometheus/rules.yaml -- the same file a standalone
-Prometheus (docker-compose.yml) loads through rule_files. Helm follows symlinks inside a
-chart directory when it loads or packages it, so the packaged chart carries the file's
-contents and the two deployment paths cannot drift into alerting on different thresholds.
+a copy of deploy/prometheus/rules.yaml -- the same file a standalone Prometheus
+(docker-compose.yml) loads through rule_files. `.Files.Get` cannot read outside the chart,
+hence the copy; `make sync-chart-files` regenerates it and a unit test asserts the two are
+byte-identical, so the deployment paths cannot drift into alerting on different
+thresholds.
 
 Set monitoring.prometheusRule.groups to replace them wholesale.
 */}}

@@ -5,9 +5,11 @@
 # lock file as-is would pull ~3 GB of CUDA 12.4 wheels that can never be used. `pyproject.toml`
 # declares the torch wheel index as a named index (`pytorch-cu124`) with `explicit = true`, so
 # the smallest correct swap is to rewrite that one URL to the CPU wheel index in place (see the
-# step below). GPU-marked tests are deselected by the default `addopts`, and the tiny-model
-# tests skip themselves because the runner has no populated Hugging Face cache (they never
-# download).
+# step below). GPU-marked tests are deselected by the default `addopts`. The tiny random
+# checkpoints the rest of the suite loads are downloaded once into a cached Hugging Face home
+# and `TURBOSERVE_REQUIRE_TINY_MODELS=1` makes their absence a failure: skipping them would
+# take the engine, the prefix cache, speculative decoding and the gateway-to-engine path out
+# of CI without turning the badge red.
 
 name: ci
 
@@ -75,7 +77,24 @@ jobs:
       - name: mypy
         run: uv run mypy src
 
+      # A few megabytes in total. `_cached_snapshot` in tests/conftest.py resolves exactly
+      # these repos with `local_files_only=True`, so the tests themselves still never reach
+      # the network -- the download happens here, once, and is restored from the cache on
+      # subsequent runs.
+      - name: Cache the tiny test checkpoints
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-tiny-${{ hashFiles('tests/conftest.py') }}
+
+      - name: Download the tiny test checkpoints
+        run: |
+          uv run hf download hf-tiny-v2/tiny-random-Qwen2ForCausalLM
+          uv run hf download hf-internal-testing/tiny-random-LlamaForCausalLM
+
       - name: pytest (CPU)
+        env:
+          TURBOSERVE_REQUIRE_TINY_MODELS: "1"
         run: uv run pytest -q
 
       - name: Restore the committed pyproject.toml
@@ -89,7 +108,7 @@ jobs:
   #
   # Dockerfile.engine is deliberately NOT built here: it layers the CUDA 12.4 torch
   # resolution on nvidia/cuda:12.4.1-runtime, which exceeds a hosted runner's free disk. It is
-  # built on the GPU host; see CONTRIBUTING.md#deliverables-not-built-yet.
+  # built on the GPU host; see CONTRIBUTING.md#what-has-never-been-executed-here.
   docker:
     name: gateway image build + smoke
     runs-on: ubuntu-latest

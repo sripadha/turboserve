@@ -386,7 +386,7 @@ Everything runs on cached tiny random checkpoints, on CPU, in seconds, with no n
 * **No adapter-aware scheduling.** The scheduler does not prefer sequences whose adapters
   are already resident, so a pool much smaller than the working set can thrash. The
   `max_gpu_adapters >= max_num_seqs` rule in §5 is the configuration that avoids it.
-* **Nothing here has been run on an H100.** Per `PLAN.md` §2a, everything was developed and
-  verified on CPU with tiny random checkpoints plus one small `gpu`-marked kernel test on a
-  Turing card. The fp16/bf16 serving paths and the kernel's behaviour at production shapes
-  are first exercised in the measurement phase.
+* **Nothing here has been run on an H100.** Everything was developed and verified on CPU
+  with tiny random checkpoints, plus the small `gpu`-marked BGMV kernel test in
+  `tests/gpu/`. The fp16/bf16 serving paths and the kernel's behaviour at production shapes
+  are first exercised by the measurement run.

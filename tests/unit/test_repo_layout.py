@@ -2,13 +2,15 @@
 
 Three kinds of rot this catches, all of which have happened at least once here:
 
-* a Makefile target named in the specification, in CI or in a shell script that does not
-  exist, so the command fails only when someone finally runs it;
+* a Makefile target named in the README, in CI or in a shell script that does not exist,
+  so the command fails only when someone finally runs it;
 * a documentation link to a page that was renamed or never written, which GitHub renders as
   a dead link rather than as an error;
-* a performance number typed into a markdown page, which the project's results policy
-  (PLAN.md §1, ``specs/agent-rules.md`` §5) forbids outside tables rendered from
-  ``results/*.json``.
+* a performance number typed into a markdown page, which the results policy in
+  ``CONTRIBUTING.md`` ("No numbers without a results JSON") forbids outside tables
+  rendered from ``results/*.json``;
+* a reference to a file that is not in the repository, which reads as a dangling pointer
+  to whoever clones it.
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DOCS = REPO_ROOT / "docs"
 
-#: Every target the specification's Makefile list names, plus the ones the scripts call.
+#: Every target the README and CONTRIBUTING name, plus the ones the scripts call.
 REQUIRED_TARGETS: tuple[str, ...] = (
     "setup",
     "lint",
@@ -126,3 +128,67 @@ def test_no_hand_written_performance_numbers(path: Path) -> None:
         f"{path.relative_to(REPO_ROOT)} states performance numbers {hits}; "
         "numbers belong in results/*.json and the pages rendered from them"
     )
+
+
+#: Files whose paths are named in prose all over the repository and must therefore exist.
+#: ``PLAN.md`` and ``specs/`` were the working notes this repository was developed against;
+#: they were never part of it, so a citation of one is a pointer a reader cannot follow.
+DANGLING_REFERENCE = re.compile(r"PLAN\.md|\bspecs/", re.IGNORECASE)
+
+#: An absolute path under a user's home directory only ever means one developer's checkout.
+ABSOLUTE_HOME_PATH = re.compile(r"/(?:home|Users)/[a-z][a-z0-9._-]*/", re.IGNORECASE)
+
+#: Directories whose contents are data or generated, not prose anyone reads for guidance.
+UNSCANNED_DIRS = ("results/", ".git/")
+
+#: Extensions that hold text a human wrote. Everything else (weights, images, lock files)
+#: is skipped: a match inside a dependency name is noise, not a citation.
+SCANNED_SUFFIXES = (".md", ".py", ".yaml", ".yml", ".sh", ".toml", ".cfg", ".txt", ".tpl")
+
+
+def tracked_text_files() -> list[Path]:
+    """Every tracked file that carries prose, as absolute paths."""
+    import subprocess
+
+    listing = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "ls-files", "-z"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if listing.returncode != 0:  # not a git checkout (an sdist, say)
+        pytest.skip("not a git checkout")
+    names = [name for name in listing.stdout.split("\0") if name]
+    return [
+        REPO_ROOT / name
+        for name in names
+        if name.endswith(SCANNED_SUFFIXES)
+        and not name.startswith(UNSCANNED_DIRS)
+        and name != "uv.lock"
+    ]
+
+
+def test_no_file_cites_a_document_that_is_not_in_the_repository() -> None:
+    """A citation a reader cannot follow is worse than no citation.
+
+    The policies those notes held now live in ``CONTRIBUTING.md``; cite that instead.
+    """
+    offenders: list[str] = []
+    for path in tracked_text_files():
+        if path.name == "test_repo_layout.py":
+            continue  # the patterns themselves
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if DANGLING_REFERENCE.search(line):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}:{number}: {line.strip()}")
+    assert not offenders, "references to files outside the repository:\n" + "\n".join(offenders)
+
+
+def test_no_file_hard_codes_a_path_under_someones_home_directory() -> None:
+    offenders: list[str] = []
+    for path in tracked_text_files():
+        if path.name == "test_repo_layout.py":
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if ABSOLUTE_HOME_PATH.search(line):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}:{number}: {line.strip()}")
+    assert not offenders, "absolute paths under a home directory:\n" + "\n".join(offenders)

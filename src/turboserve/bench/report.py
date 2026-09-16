@@ -26,6 +26,7 @@ import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -59,6 +60,7 @@ __all__ = [
     "render_index",
     "render_run",
     "results_app",
+    "suite_line",
     "update_between_markers",
 ]
 
@@ -288,6 +290,48 @@ def hardware_line(results: Sequence[RunResult]) -> str:
         source = _first([result.price_source for result in results])
         parts.append(f"{shown}/GPU-hour" + (f" ({source})" if source else ""))
     return f"**Hardware:** {' · '.join(parts)}." if parts else ""
+
+
+def _instant(value: str | None) -> datetime | None:
+    """Parse one of the schema's ISO-8601 timestamps, or ``None`` if it is unusable."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def suite_line(results: Sequence[RunResult]) -> str:
+    """What the runs on a page cost in machine time, and in money.
+
+    The per-million-token column prices a token; this prices the *suite*, which is the
+    figure somebody about to rent the hardware actually needs. Both halves are read out of
+    the result files: the span runs from the earliest start to the latest finish, so the
+    gaps between runs -- checkpoint loads, warm-ups, the scenario switching models -- are
+    included, because a rented GPU bills for them too. Omitted entirely when the files do
+    not carry usable timestamps, and the money clause is omitted when they record no price
+    or disagree about it.
+    """
+    if not results:
+        return ""
+    starts = [moment for moment in (_instant(r.started_at) for r in results) if moment]
+    ends = [moment for moment in (_instant(r.finished_at) for r in results) if moment]
+    if not starts or not ends:
+        return ""
+    seconds = max(0.0, (max(ends) - min(starts)).total_seconds())
+    hours, minutes = divmod(int(seconds // 60), 60)
+    scenarios = {result.scenario for result in results}
+    span = f"{hours}h {minutes:02d}m" if hours else f"{minutes}m"
+    sentence = (
+        f"**Suite:** {len(results)} run(s) across {len(scenarios)} scenario(s), "
+        f"{span} from the first run's start to the last one's finish"
+    )
+    prices = {result.gpu_price_per_hour for result in results if result.gpu_price_per_hour}
+    if len(prices) == 1:
+        price = next(iter(prices))
+        sentence += f" — about ${price * seconds / 3600.0:.2f} of GPU time at ${price:.2f}/hour"
+    return sentence + "."
 
 
 # -- one run ------------------------------------------------------------------------------
@@ -610,12 +654,14 @@ def _page(
         )
         return "\n".join(lines)
     machine = hardware_line([result for _, result in loaded])
+    suite = suite_line([result for _, result in loaded])
     lines.extend(
         [
             f"{len(loaded)} run(s) across {len(scenarios)} scenario(s). "
             "Each table is followed by the provenance of the runs behind it.",
             "",
             *([machine, ""] if machine else []),
+            *([suite, ""] if suite else []),
             md_table(
                 ["Scenario", "Runs", "Profiles"],
                 [
@@ -658,7 +704,13 @@ def readme_section(loaded: Sequence[tuple[Path, RunResult]]) -> str:
     scenario = HEADLINE_SCENARIO if HEADLINE_SCENARIO in scenarios else scenarios[0]
     runs = [result for _, result in loaded if result.scenario == scenario]
     machine = hardware_line([result for _, result in loaded])
-    lines = [*([machine, ""] if machine else []), f"### `{scenario}`", ""]
+    suite = suite_line([result for _, result in loaded])
+    lines = [
+        *([machine, ""] if machine else []),
+        *([suite, ""] if suite else []),
+        f"### `{scenario}`",
+        "",
+    ]
     lines.extend([md_table(*_summary_table(runs)), "", provenance_line(runs), ""])
     groups = _by_concurrency(runs)
     if groups:

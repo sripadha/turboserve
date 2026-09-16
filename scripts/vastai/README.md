@@ -121,6 +121,5 @@ fails, capture its exact error into the run's notes rather than working around i
 
 These scripts have been checked for syntax (`bash -n`) and their embedded Python helpers
 have been exercised against recorded `vastai` JSON shapes. They have not been run against
-the vast.ai API from this checkout: doing so would rent a GPU and, per the project's rules,
-no measurement runs happen on the development machine. The first real run is the one that
-produces the measured results.
+the vast.ai API from this checkout: doing so rents a GPU. The first real run is the one
+that produces the measured results.

@@ -13,7 +13,13 @@ from turboserve.gateway.auth import (
     Unauthenticated,
     hash_api_key,
 )
-from turboserve.gateway.tenants import Tenant, TenantConfigError, TenantRegistry
+from turboserve.gateway.tenants import (
+    EXAMPLE_API_KEYS,
+    EXAMPLE_KEY_DIGESTS,
+    Tenant,
+    TenantConfigError,
+    TenantRegistry,
+)
 
 KEY = "sk-turboserve-test-key"
 DIGEST = hashlib.sha256(KEY.encode()).hexdigest()
@@ -193,3 +199,23 @@ def test_registry_reports_a_bad_file(tmp_path: Path) -> None:
     empty.write_text("tenants: []\n", encoding="utf-8")
     with pytest.raises(TenantConfigError, match="no tenants"):
         TenantRegistry.from_yaml(empty)
+
+
+def test_the_shipped_example_keys_are_reported_as_example_keys() -> None:
+    """A deployment that copies ``configs/tenants.yaml`` keeps public credentials.
+
+    The plaintext of every digest in that file is written in its own comments, so the file
+    is a convenience for a fresh clone and a hazard for anything else. ``config-check`` and
+    the gateway's startup path warn about exactly this list.
+    """
+    path = Path(__file__).resolve().parents[2] / "configs" / "tenants.yaml"
+    registry = TenantRegistry.from_yaml(path)
+    assert registry.tenants_with_example_keys() == ["acme", "globex", "labs", "suspended"]
+    # The digests really are the sha256 of the documented plaintexts, so the check cannot
+    # rot into a list of hard-coded strings nobody can reproduce.
+    assert {hash_api_key(key) for key in EXAMPLE_API_KEYS} == set(EXAMPLE_KEY_DIGESTS)
+
+
+def test_a_configuration_with_its_own_keys_reports_nothing() -> None:
+    registry = TenantRegistry([Tenant(id="real", keys_sha256=[hash_api_key("sk-minted-here")])])
+    assert registry.tenants_with_example_keys() == []

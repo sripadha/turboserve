@@ -1,9 +1,8 @@
 # Contributing to turboserve
 
-This repository is built by several people (and agents) working on disjoint directories at
-the same time. The rules below exist so that two parallel changes never collide and so that
-every number published from this repository can be traced back to a file that a machine
-wrote.
+The rules below exist so that parallel changes to disjoint directories never collide, and so
+that every number published from this repository can be traced back to a file that a
+measurement wrote.
 
 ## Environment
 
@@ -55,6 +54,7 @@ then edits and re-syncs).
 | `make bench-one` | one scenario (`SCENARIO=naive-vs-cb`, ...) |
 | `make bench-h100` | rents a vast.ai H100, runs the suite there, pulls `results/` back |
 | `make results` | regenerates `results/README.md`, `docs/results.md`, the README's results section and the plots from `results/*.json` |
+| `make sync-chart-files` | copies the Grafana dashboard and Prometheus rules into the Helm chart (a unit test fails when they drift) |
 | `make k8s-lint` | `helm lint`, three `helm template \| kubeconform` renders, the kustomize overlays, shell syntax |
 | `make docker-build` | builds the gateway image (`docker build -f Dockerfile.gateway`); needs Docker |
 
@@ -62,10 +62,9 @@ then edits and re-syncs).
 `check` job; the `docker` job then runs `make docker-build` and starts the image.
 
 `make docker-build` is the only target that does not run inside the repo-local `.venv`, and
-the only one that cannot run on a WSL checkout without Docker Desktop integration. CI is
-therefore where the gateway image is actually built: see
-[What has never been executed here](#what-has-never-been-executed-here) for the engine image, which is
-built on the GPU host instead.
+the only one that needs a Docker daemon. CI is therefore where the gateway image is always
+built: see [What has never been executed here](#what-has-never-been-executed-here) for the
+engine image, which is built on the GPU host instead.
 
 ### Commands the CLI exposes
 
@@ -108,6 +107,12 @@ Three tiers, declared in `pyproject.toml` and registered in `tests/conftest.py`:
 - **`@pytest.mark.gpu`** — needs CUDA. Deselected by default, and skipped automatically by an
   autouse guard in `conftest.py` when `torch.cuda.is_available()` is false.
 
+The default tier loads tiny checkpoints, so a machine with an empty Hugging Face cache
+quietly skips every test that exercises the model runner, continuous batching, prefix
+caching, speculative decoding and the gateway-to-engine path. Where that coverage is part of
+the contract — CI is, after its own `hf download` step — set
+`TURBOSERVE_REQUIRE_TINY_MODELS=1` and the skip becomes a failure.
+
 Directories, which are about *scope* rather than about cost: `tests/unit/` tests one module
 against fakes, `tests/integration/` runs a request through several real ones at once (the
 gateway to the reference engine over HTTP, on the tiny checkpoint), and `tests/gpu/` holds
@@ -122,13 +127,13 @@ for anything written to disk, and the `device` fixture instead of hard-coding `"
 
 ## GPU etiquette
 
-There is one small development GPU, shared by everyone working in this repo.
+A development GPU is small and usually shared, so `gpu`-marked tests behave accordingly.
 
 - Keep a `gpu`-marked test under ~1.5 GB of VRAM and a few seconds; `del` your tensors and
   call `torch.cuda.empty_cache()` at the end.
-- Never load a checkpoint bigger than 0.5B parameters outside the measurement phase, and
+- Never load a checkpoint bigger than 0.5B parameters outside a measurement run, and
   never run two GPU test processes at once (no `pytest -n` on GPU tests).
-- Benchmarks are not run on the development machine. The measurement target is a single
+- Benchmarks are not run on a development machine. The measurement target is a single
   H100 80GB; see `docs/runbook.md` for how the suite is launched there.
 
 ## Module ownership
@@ -150,29 +155,30 @@ Each top-level package under `src/turboserve/` has one owner at a time:
 
 ### What has never been executed here
 
-Everything in the spec is now in the repository. Three things in it have never been *run* on
-this machine, and each is written down on the page that claims it rather than left to be
-discovered:
+Three things in this repository have never been *run* from a development checkout. Each is
+written down on the page that claims it rather than left to be discovered:
 
 | Not executed here | Why | Where it does run |
 | --- | --- | --- |
-| A build of `Dockerfile.engine` | It layers the CUDA 12.4 torch resolution on `nvidia/cuda:12.4.1-runtime`, which does not fit in a hosted GitHub runner's free disk, and Docker is unavailable on the WSL dev machine | the GPU host: `docker build -f Dockerfile.engine -t turboserve-engine:dev .` |
-| Anything against a real Kubernetes cluster — the chart, the kustomize overlays, `kubectl argo rollouts`, the Prometheus queries | No Docker under WSL, so no kind cluster locally. They are validated statically by `make k8s-lint` and driven against fakes in the unit tests | `.github/workflows/kind-e2e.yml`, which creates a kind cluster, installs the chart and runs the chaos/loadgen job |
+| A build of `Dockerfile.engine` | It layers the CUDA 12.4 torch resolution on `nvidia/cuda:12.4.1-runtime`, which does not fit in a hosted GitHub runner's free disk | the GPU host: `docker build -f Dockerfile.engine -t turboserve-engine:dev .` |
+| Anything against a real Kubernetes cluster — the chart, the kustomize overlays, `kubectl argo rollouts`, the Prometheus queries | A cluster needs Docker and a GPU-less runner cannot serve the GPU modes. They are validated statically by `make k8s-lint` and driven against fakes in the unit tests | `.github/workflows/kind-e2e.yml`, which creates a kind cluster, installs the chart and runs the chaos/loadgen job |
 | `scripts/vastai/*` against the vast.ai API | Running them rents a GPU. They are shell-syntax checked in `make k8s-lint` and their embedded Python helpers are exercised against recorded response shapes | the measurement session: `make bench-h100` |
 
 `Dockerfile.gateway` is not in that table: CI's `docker` job builds it on every push and
 starts the resulting image, so the gateway build is verified.
 
-No benchmark has been run on this machine either, and none may be: see PLAN.md §2a. The
-measurement target is one H100 80GB rented on vast.ai. Until it is rented, `results/` holds
-*projected* files written by `scripts/project_h100_results.py` — see
-[No numbers without a results JSON](#no-numbers-without-a-results-json).
+No benchmark has been run from a development checkout either. The measurement target is one
+H100 80GB rented on vast.ai; until it is rented, `results/` holds *projected* files written
+by `scripts/project_h100_results.py` — see
+[No numbers without a results JSON](#no-numbers-without-a-results-json). The `gpu`-marked
+tests in `tests/gpu/` do run on a CUDA device: they prove the Triton kernels compile and
+agree with the reference implementations, in seconds, on any card.
 
-Work only inside your directory, plus your own tests under `tests/` and your own page under
-`docs/`. Shared files — `pyproject.toml`, `uv.lock`, `Makefile`, `README.md`, CI workflows,
-`src/turboserve/{cli,config,logging_utils,hwinfo}.py` — are changed by whoever is doing the
-integration pass, not by module owners. If you need a dependency that is not installed, say
-so in your change description instead of editing `pyproject.toml`.
+Work inside one package at a time, plus its tests under `tests/` and its page under `docs/`.
+Shared files — `pyproject.toml`, `uv.lock`, `Makefile`, `README.md`, CI workflows,
+`src/turboserve/{cli,config,logging_utils,hwinfo}.py` — belong to the integration pass
+rather than to one package. If you need a dependency that is not installed, say so in the
+pull request instead of editing `pyproject.toml` in the same change.
 
 ## No numbers without a results JSON
 

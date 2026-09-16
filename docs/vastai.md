@@ -1,10 +1,10 @@
 # Running the suite on a rented H100
 
 Every published number in this repository comes from one NVIDIA H100 80GB rented on
-vast.ai. The development machine — WSL2, 6 GB Turing GPU, no Docker — is for writing code
-and running CPU unit tests; nothing measured there is published. This page is how the gap is
-crossed: [`scripts/vastai/`](../scripts/vastai) rents the machine, prepares it, runs the
-suite and brings the results home.
+vast.ai. A development checkout is for writing code and running CPU unit tests; nothing
+timed there is published. This page is how the gap is crossed:
+[`scripts/vastai/`](../scripts/vastai) rents the machine, prepares it, runs the suite and
+brings the results home.
 
 ```mermaid
 flowchart TD
@@ -123,7 +123,7 @@ Scenarios take `--profile`, which selects models and sizes from `configs/bench/p
 | Profile | Where it runs | What it is for |
 | --- | --- | --- |
 | `h100` | the rented instance | The published results. 7B/3B targets, 1.5B/0.5B drafts, full concurrency sweeps. |
-| `dev-2060` | the development machine | Checking that a scenario runs end to end. Tiny models, tiny sweeps; its output is never published as a result. |
+| `dev-2060` | a small consumer GPU | Checking that a scenario runs end to end. Tiny models, tiny sweeps; its output is never published as a result. |
 
 `onstart.sh` pre-downloads the `h100` profile's four Qwen2.5 checkpoints
 (7B, 3B, 1.5B, 0.5B — the targets and their speculative-decoding drafts). Override with
@@ -133,8 +133,7 @@ Scenarios take `--profile`, which selects models and sizes from `configs/bench/p
 
 The scripts have been syntax-checked (`bash -n`, in CI on every push) and their embedded
 Python helpers — offer selection and instance-status parsing — have been exercised against
-recorded `vastai` JSON shapes. They have **not** been run against the vast.ai API from here:
-doing so rents a GPU, and by this project's own rules no measurement runs happen on the
-development machine. The first real execution is the run that produces the measured results,
-and `results/` will say so: every file records its hardware, its software versions, its
-price and its `provenance`.
+recorded `vastai` JSON shapes. They have **not** been run against the vast.ai API from this
+checkout: doing so rents a GPU. The first real execution is the run that produces the
+measured results, and `results/` will say so: every file records its hardware, its software
+versions, its price and its `provenance`.

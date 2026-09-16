@@ -81,7 +81,7 @@ def hwinfo(
     typer.echo(json.dumps(collect(), indent=indent or None, sort_keys=True))
 
 
-# ``turboserve serve`` is the spec's headline command and is deliberately the *same*
+# ``turboserve serve`` is the headline command and is deliberately the *same*
 # function object as ``turboserve gateway serve`` rather than a second implementation of
 # it: one set of flags, one set of defaults, one place where the engine selection lives.
 app.command("serve")(serve_command)

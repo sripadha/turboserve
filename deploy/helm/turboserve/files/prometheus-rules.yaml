@@ -1,1 +1,207 @@
-../../../prometheus/rules.yaml
+# turboserve recording and alerting rules.
+#
+# One file, two consumers:
+#
+#   * a plain Prometheus server loads it through `rule_files:` (see prometheus.yml, which is
+#     what docker-compose.yml mounts);
+#   * the Helm chart embeds it verbatim in a PrometheusRule custom resource
+#     (deploy/helm/turboserve/templates/prometheusrule.yaml reads it through .Files.Get,
+#     which cannot leave the chart directory, so deploy/helm/turboserve/files/
+#     prometheus-rules.yaml is a copy of this file kept in step by `make sync-chart-files`
+#     and asserted byte-identical by tests/unit/test_deploy_assets.py). The `spec:` of a
+#     PrometheusRule is exactly the `groups:` list below, which is why this file has no
+#     other top-level key.
+#
+# Every series referenced here is exported by the gateway on /metrics
+# (src/turboserve/gateway/metrics.py). The label sets differ per series -- requests and the
+# latency histograms carry (tenant, model, backend, lane), rate_limited_total carries
+# (tenant, limit), queue_depth carries (model) -- and are tabulated in docs/kubernetes.md.
+# Thresholds are the service-level objectives the canary controller gates on, expressed so
+# that an operator's pager and the automated rollout agree on what "bad" means. They are
+# configuration, not measurements: override them by setting
+# `monitoring.prometheusRule.groups` in the chart's values.
+
+groups:
+  # ---------------------------------------------------------------------------------------
+  # Recording rules. Alerts, the Grafana dashboard and the canary controller's Prometheus
+  # queries all want the same four aggregates; computing them once keeps the definitions
+  # identical everywhere and keeps the alert expressions short enough to read on a pager.
+  # Naming follows the Prometheus convention level:metric:operation.
+  # ---------------------------------------------------------------------------------------
+  - name: turboserve.recording
+    interval: 30s
+    rules:
+      - record: turboserve:requests:rate5m
+        expr: sum by (lane) (rate(turboserve_gateway_requests_total[5m]))
+
+      # clamp_min keeps the ratio defined while a lane is idle: without it a lane with no
+      # traffic divides by zero, the series goes NaN and the alert below silently stops
+      # evaluating instead of staying quiet for the right reason.
+      - record: turboserve:request_error_ratio:rate5m
+        expr: |
+          sum by (lane) (rate(turboserve_gateway_requests_total{status="error"}[5m]))
+            / clamp_min(sum by (lane) (rate(turboserve_gateway_requests_total[5m])), 1e-9)
+
+      - record: turboserve:ttft_seconds:p95_5m
+        expr: |
+          histogram_quantile(0.95, sum by (lane, le) (rate(turboserve_gateway_ttft_seconds_bucket[5m])))
+
+      - record: turboserve:tpot_seconds:p95_5m
+        expr: |
+          histogram_quantile(0.95, sum by (lane, le) (rate(turboserve_gateway_tpot_seconds_bucket[5m])))
+
+      - record: turboserve:e2e_seconds:p95_5m
+        expr: |
+          histogram_quantile(0.95, sum by (lane, le) (rate(turboserve_gateway_e2e_seconds_bucket[5m])))
+
+      # The canary gate, as a single series. `on()` with no labels joins the two lanes
+      # together (they differ only in `lane`, which is dropped by group_left on an empty
+      # matching set), giving one ratio per scrape.
+      - record: turboserve:canary_ttft_p95_ratio
+        expr: |
+          turboserve:ttft_seconds:p95_5m{lane="canary"}
+            / on() group_left() turboserve:ttft_seconds:p95_5m{lane="stable"}
+
+      - record: turboserve:output_tokens:rate5m
+        expr: sum by (lane) (rate(turboserve_gateway_tokens_total{kind="completion"}[5m]))
+
+  # ---------------------------------------------------------------------------------------
+  # Availability. These fire on the scrape target itself, so they still work when the
+  # gateway is too broken to export a single request metric.
+  # ---------------------------------------------------------------------------------------
+  - name: turboserve.availability
+    rules:
+      - alert: TurboserveGatewayDown
+        expr: up{job="turboserve"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: turboserve
+        annotations:
+          summary: "turboserve gateway target {{ $labels.instance }} is down"
+          description: >-
+            Prometheus has failed to scrape {{ $labels.instance }} for 2 minutes. Check the
+            pod's readiness probe (/readyz) and its logs; a gateway that cannot answer
+            /metrics is also not answering /v1/chat/completions.
+          runbook_url: https://github.com/sripadha/turboserve/blob/main/docs/runbook.md
+
+      - alert: TurboserveNoGatewayTargets
+        expr: absent(up{job="turboserve"}) == 1
+        for: 5m
+        labels:
+          severity: critical
+          service: turboserve
+        annotations:
+          summary: "no turboserve gateway targets are being scraped"
+          description: >-
+            The job has no targets at all: the Service has no ready endpoints, or the
+            ServiceMonitor's selector no longer matches the Service's labels.
+          runbook_url: https://github.com/sripadha/turboserve/blob/main/docs/runbook.md
+
+  # ---------------------------------------------------------------------------------------
+  # Service-level objectives. The error-ratio and canary-ratio thresholds are the same
+  # numbers the canary controller gates on (CanaryConfig.max_error_rate and
+  # max_p95_ratio_vs_stable), so a rollout that the controller rolls back and a rollout that
+  # pages a human are the same event, not two different opinions.
+  # ---------------------------------------------------------------------------------------
+  - name: turboserve.slo
+    rules:
+      - alert: TurboserveHighErrorRate
+        expr: |
+          turboserve:request_error_ratio:rate5m{lane="stable"} > 0.005
+            and turboserve:requests:rate5m{lane="stable"} > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          service: turboserve
+          lane: stable
+        annotations:
+          summary: "stable lane error ratio above the SLO"
+          description: >-
+            {{ $value | humanizePercentage }} of requests on the stable lane are failing
+            over the last 5 minutes. The second conjunct requires real traffic, so a quiet
+            service with one stray error does not page.
+          runbook_url: https://github.com/sripadha/turboserve/blob/main/docs/runbook.md
+
+      # Shorter `for` than the stable lane: a canary carries a small slice of traffic and
+      # exists to be judged quickly, so two minutes of breach is enough to act on.
+      - alert: TurboserveCanaryHighErrorRate
+        expr: |
+          turboserve:request_error_ratio:rate5m{lane="canary"} > 0.005
+            and turboserve:requests:rate5m{lane="canary"} > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          service: turboserve
+          lane: canary
+        annotations:
+          summary: "canary lane error ratio above the rollout gate"
+          description: >-
+            The canary is failing {{ $value | humanizePercentage }} of its requests. The
+            controller rolls back on its own; this alert exists so the rollback is not the
+            first thing anyone hears about.
+          runbook_url: https://github.com/sripadha/turboserve/blob/main/docs/runbook.md
+
+      - alert: TurboserveTTFTSLOBreach
+        expr: turboserve:ttft_seconds:p95_5m{lane="stable"} > 2
+        for: 10m
+        labels:
+          severity: warning
+          service: turboserve
+        annotations:
+          summary: "p95 time to first token above the objective"
+          description: >-
+            p95 TTFT is {{ $value | humanizeDuration }} on the stable lane. TTFT is prefill
+            plus queueing, so check queue depth and KV-cache pressure before blaming the
+            model. The 2 s objective is the chart's default; set
+            monitoring.prometheusRule.groups to gate on your own number.
+          runbook_url: https://github.com/sripadha/turboserve/blob/main/docs/runbook.md
+
+      - alert: TurboserveCanaryLatencyRegression
+        expr: turboserve:canary_ttft_p95_ratio > 1.25
+        for: 5m
+        labels:
+          severity: warning
+          service: turboserve
+          lane: canary
+        annotations:
+          summary: "canary p95 TTFT is above the allowed ratio to stable"
+          description: >-
+            The canary's p95 TTFT is {{ $value }}x the stable lane's under the same load.
+            This is the ratio gate the canary controller uses to decide ROLLBACK.
+          runbook_url: https://github.com/sripadha/turboserve/blob/main/docs/runbook.md
+
+  # ---------------------------------------------------------------------------------------
+  # Saturation and tenant health. Not SLO breaches yet -- these are the signals that say a
+  # breach is coming, and which knob (replicas or quota) is the one to turn.
+  # ---------------------------------------------------------------------------------------
+  - name: turboserve.saturation
+    rules:
+      - alert: TurboserveQueueDepthHigh
+        expr: sum by (model) (turboserve_gateway_queue_depth) > 32
+        for: 10m
+        labels:
+          severity: warning
+          service: turboserve
+        annotations:
+          summary: "admitted requests are queueing for model {{ $labels.model }}"
+          description: >-
+            Queue depth has stayed above 32 for 10 minutes. This is the same series the
+            gateway HPA scales on; a sustained breach means the HPA is already at
+            maxReplicas, or the backend pool rather than the gateway is the bottleneck.
+          runbook_url: https://github.com/sripadha/turboserve/blob/main/docs/runbook.md
+
+      - alert: TurboserveTenantRateLimited
+        expr: |
+          sum by (tenant, limit) (rate(turboserve_gateway_rate_limited_total[15m])) > 0.1
+        for: 15m
+        labels:
+          severity: info
+          service: turboserve
+        annotations:
+          summary: "tenant {{ $labels.tenant }} is being rate limited continuously ({{ $labels.limit }})"
+          description: >-
+            The tenant has been taking 429s for 15 minutes, so the named quota is the
+            binding constraint. Adding gateway replicas will not help; change the quota in
+            the tenants file or tell the tenant.
+          runbook_url: https://github.com/sripadha/turboserve/blob/main/docs/runbook.md

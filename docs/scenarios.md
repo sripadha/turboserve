@@ -202,8 +202,8 @@ server whose speculative settings this process did not choose, and it declares n
 `base only (vllm)`.
 
 
-Scenarios 3 and 4 of the specification belong to the engine's speculative-decoding and
-multi-LoRA module groups, and their scenario modules are registered **optionally**:
+The speculative-decoding and multi-LoRA scenarios belong to the engine packages of the
+same name, and their scenario modules are registered **optionally**:
 `bench/cli.py` imports `turboserve.bench.scenarios.spec_decode` and
 `turboserve.bench.scenarios.multi_lora` when this app is built, and a module that is not
 present is logged and skipped rather than breaking every other benchmark command. The same
@@ -307,8 +307,9 @@ fabricated one.
 
 The end-to-end scenario tests use two to four very short requests against a tiny random
 checkpoint. They assert that a scenario produces a *valid, complete* result file with the
-right conventions — never that a number in it is any particular value. Figures produced on
-this machine are never published; see PLAN.md §1 and §2a.
+right conventions — never that a number in it is any particular value. Figures produced by
+a test run are never published; see CONTRIBUTING.md,
+["No numbers without a results JSON"](../CONTRIBUTING.md#no-numbers-without-a-results-json).
 
 ## Limitations
 
@@ -341,8 +342,8 @@ rates the client's event loop bottlenecks before the server does.
 `max_in_flight_observed` is recorded in every scenario's derived block so such a run is
 visible rather than silently wrong.
 
-**Nothing here has been run on a GPU or against a real vLLM server.** Per PLAN.md §2a every
-path above was exercised on CPU with a tiny random checkpoint and, for the HTTP arms, against
-this repository's own mock gateway over a loopback socket. The `vllm` arms are built from the
+**No scenario has been run on a GPU or against a real vLLM server.** Every path above was
+exercised on CPU with a tiny random checkpoint and, for the HTTP arms, against this
+repository's own mock gateway over a loopback socket. The `vllm` arms are built from the
 same `OpenAICompatBackend` the gateway uses in production and are covered by that module's
-tests, but no vLLM process has been contacted from this machine.
+tests, but no vLLM process has been contacted from a development checkout.

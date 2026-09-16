@@ -3,7 +3,7 @@
 # Run the benchmark suite on the rented instance.
 #
 #   scripts/vastai/run_remote.sh                       # make bench PROFILE=h100
-#   scripts/vastai/run_remote.sh make bench-one SCENARIO=prefix_cache
+#   scripts/vastai/run_remote.sh make bench-one SCENARIO=prefix-cache
 #   scripts/vastai/run_remote.sh bash                  # interactive shell on the instance
 #
 # The command runs under `nohup` with its output tee'd to a log on the instance, and this

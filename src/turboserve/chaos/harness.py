@@ -1024,7 +1024,7 @@ def run_command(
 
 
 def _worker_mode(text: str) -> WorkerMode:
-    """Validate ``--mode`` and narrow it to the literal the spec expects."""
+    """Validate ``--mode`` and narrow it to the ``WorkerMode`` literal."""
     if text == "inprocess":
         return "inprocess"
     if text == "subprocess":

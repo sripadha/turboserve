@@ -34,6 +34,7 @@ from turboserve.bench.report import (
     render_index,
     render_run,
     results_app,
+    suite_line,
     update_between_markers,
 )
 
@@ -385,6 +386,38 @@ def test_hardware_line_omits_what_no_run_recorded() -> None:
     run.software = {}
     run.gpu_price_per_hour = None
     assert hardware_line([run]) == ""
+
+
+def test_suite_line_prices_the_whole_sweep_from_the_run_timestamps() -> None:
+    """What a reader renting the hardware needs: how long, and how much.
+
+    The span deliberately runs start-to-finish across every run rather than summing the
+    runs, because the gaps -- checkpoint loads, warm-ups -- are billed too.
+    """
+    first = make_run("naive_vs_cb", "naive", started_at="2026-09-16T10:00:00+00:00")
+    first.finished_at = "2026-09-16T10:30:00+00:00"
+    last = make_run("prefix_cache", "cache on", started_at="2026-09-16T11:30:00+00:00")
+    last.finished_at = "2026-09-16T12:00:00+00:00"
+    line = suite_line([first, last])
+    assert line.startswith("**Suite:** 2 run(s) across 2 scenario(s), 2h 00m")
+    assert "$4.98 of GPU time at $2.49/hour" in line
+
+
+def test_suite_line_drops_the_money_when_the_price_is_unknown_or_disputed() -> None:
+    cheap = make_run("naive_vs_cb", "naive")
+    cheap.finished_at = "2026-09-16T10:30:00+00:00"
+    dear = make_run("naive_vs_cb", "static batch", started_at="2026-09-16T10:30:00+00:00")
+    dear.finished_at = "2026-09-16T11:00:00+00:00"
+    dear.gpu_price_per_hour = 3.10
+    line = suite_line([cheap, dear])
+    assert "1h 00m" in line
+    assert "$" not in line
+
+
+def test_suite_line_is_empty_without_usable_timestamps() -> None:
+    assert suite_line([]) == ""
+    run = make_run("naive_vs_cb", "naive", started_at="not a timestamp")
+    assert suite_line([run]) == ""
 
 
 def test_each_declared_baseline_gets_its_own_relative_table(tmp_path: Path) -> None:

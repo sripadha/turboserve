@@ -282,8 +282,9 @@ class CausalLM(nn.Module):
         ``dtype="auto"`` takes the checkpoint's own storage dtype, falling back to fp32 when
         the config does not record one. The engine normally passes an explicit dtype from
         :meth:`turboserve.engine.core.types.EngineConfig.resolved_dtype` instead, because
-        the serving dtype is a deployment decision (fp16 on this project's Turing dev GPU,
-        where bf16 has no tensor-core support) rather than a property of the checkpoint.
+        the serving dtype is a deployment decision (bf16 on an H100, fp16 on a pre-Ampere
+        card where bf16 has no tensor-core support) rather than a property of the
+        checkpoint.
         """
         from turboserve.engine.model.weights import resolve_model_path
 

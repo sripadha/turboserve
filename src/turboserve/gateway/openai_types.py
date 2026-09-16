@@ -167,7 +167,12 @@ class _GenerationRequest(BaseModel):
     """Adapter name as the tenant knows it; resolved against the tenant's adapter map."""
 
     priority: int | None = None
-    """Scheduling priority passed through to the engine; higher runs first."""
+    """Preemption priority passed through to the engine.
+
+    It does *not* reorder admission: the engine admits by arrival order (or by tenant fair
+    share). When the KV pool is full the lowest-priority running sequence is the one
+    preempted, so a higher number means a request is preempted last.
+    """
 
     @model_validator(mode="after")
     def _reject_unsupported(self) -> _GenerationRequest:

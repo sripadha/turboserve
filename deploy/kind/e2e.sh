@@ -21,10 +21,9 @@
 #   SKIP_BUILD=1 deploy/kind/e2e.sh       # reuse an already-built IMAGE
 #   SKIP_CLUSTER=1 deploy/kind/e2e.sh     # use the current kubectl context as-is
 #
-# Requires docker, kind, kubectl, helm and python3 on PATH. Docker is not available inside
-# WSL without Docker Desktop integration, so on this project's development machine the
-# script is run by .github/workflows/kind-e2e.yml rather than locally; every object it
-# installs is validated locally with `helm lint` and `kubeconform` instead.
+# Requires docker, kind, kubectl, helm and python3 on PATH. On a checkout without Docker the
+# script is run by .github/workflows/kind-e2e.yml instead; every object it installs is
+# validated without a cluster by `make k8s-lint` (helm lint and kubeconform).
 
 set -Eeuo pipefail
 

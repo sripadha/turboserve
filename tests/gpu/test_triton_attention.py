@@ -2,8 +2,8 @@
 
 These tests exist to prove the kernel *compiles and is numerically right*, not that it is
 fast: shapes are deliberately tiny (a few kilobytes of KV) so the file runs in seconds on
-any CUDA device, including the 6 GB Turing GPU this repo is developed on. Performance is
-measured separately, on the H100 profile, by ``turboserve bench``.
+any CUDA device, including a small consumer GPU. Performance is measured separately, on
+the H100 profile, by ``turboserve bench``.
 
 The tolerance is 1e-2 absolute in fp16. Both implementations accumulate in fp32, but they
 sum the context in a different order -- the reference sums the whole context at once inside

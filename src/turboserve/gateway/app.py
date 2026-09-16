@@ -537,6 +537,18 @@ def create_app(
         )
     if not options.require_auth and tenants.get(options.anonymous_tenant_id) is None:
         tenants = TenantRegistry([*tenants, *TenantRegistry.default()])
+    if options.require_auth:
+        # The example keys are published in configs/tenants.yaml's own comments, so a
+        # deployment that kept them is accepting credentials anyone can read off GitHub.
+        # Refusing to start would break the quickstart, so this is loud rather than fatal.
+        example_tenants = tenants.tenants_with_example_keys()
+        if example_tenants:
+            logger.warning(
+                "tenants %s still accept the example API keys shipped in "
+                "configs/tenants.yaml; their plaintext is public. Replace the digests "
+                "(turboserve gateway hash-key) before exposing this gateway.",
+                ", ".join(example_tenants),
+            )
 
     resolved_metrics = metrics or GatewayMetrics(
         include_process_metrics=options.include_process_metrics
@@ -926,6 +938,14 @@ def config_check_command(
             ", ".join(sorted(tenant.adapters)) or "-",
         )
     console.print(tenant_table)
+
+    example_tenants = registry.tenants_with_example_keys()
+    if example_tenants:
+        console.print(
+            f"[yellow]warning[/yellow]: {', '.join(example_tenants)} still accept the "
+            "example API keys shipped with this repository, whose plaintext is public. "
+            "Replace those digests before serving real traffic."
+        )
 
     model_table = Table(title=f"model pools ({models})")
     for column in ("model", "backend", "type", "lane", "weight", "priced"):

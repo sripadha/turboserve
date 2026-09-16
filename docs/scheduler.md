@@ -132,12 +132,15 @@ properties follow, and both are tested:
   schedule. No amount of queued work from a heavy tenant can starve a light one, because a
   tenant's virtual time stands still exactly while it is not being served.
 
-A tenant that goes idle and comes back starts at the *current minimum* virtual time rather
-than its stale value, so it cannot bank credit while idle and then monopolise the engine.
+The virtual clock is self-clocked (SCFQ): it reads the virtual time of the most recently
+admitted request, and a tenant that goes idle and becomes backlogged again restarts at
+`max(its own virtual time, that clock)` rather than at the stale value it stopped on. An
+idle tenant therefore cannot bank credit for the time it was away and then monopolise the
+engine when it returns; its share is a share of the current epoch.
 
 ## How it is tested
 
-`tests/unit/test_scheduler.py` (22 tests) drives workloads to completion through a step loop
+`tests/unit/test_scheduler.py` (23 tests) drives workloads to completion through a step loop
 that stands in for the runtime, asserting invariants after every step with
 `Scheduler.check_invariants()`:
 
@@ -153,8 +156,9 @@ that stands in for the runtime, asserting invariants after every step with
   across its own preemptions, and the block pool is whole at the end;
 * the victim is the lowest-priority, most recent sequence, and a resumed sequence re-adopts
   its cached prefix;
-* `tenant_fair` splits admissions by weight and bounds the light tenant's wait, while an
-  idle tenant cannot bank credit;
+* `tenant_fair` splits admissions by weight and bounds the light tenant's wait, while a
+  tenant that goes idle cannot bank credit -- tested both for a tenant that has never been
+  served and for one that was served, went idle and came back;
 * abort works from every state, stop tokens and EOS retire a sequence and release its
   blocks, and timings are stamped once and can be injected.
 
@@ -198,3 +202,5 @@ uv run pytest tests/unit/test_scheduler.py tests/unit/test_sequence.py tests/uni
   Sarathi-Serve*, OSDI 2024 -- chunked prefill and the stall it removes.
 * Demers, Keshav and Shenker, *Analysis and Simulation of a Fair Queueing Algorithm*,
   SIGCOMM 1989 -- the virtual-time argument behind `tenant_fair`'s bounded wait.
+* Golestani, *A Self-Clocked Fair Queueing Scheme for Broadband Applications*, INFOCOM 1994
+  -- the self-clocked virtual time `tenant_fair` uses as the floor for a returning tenant.

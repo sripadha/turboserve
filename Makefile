@@ -21,7 +21,7 @@ SCENARIO ?= naive-vs-cb
 
 .DEFAULT_GOAL := help
 .PHONY: help setup lock lint format typecheck test test-slow test-gpu test-all hooks hwinfo \
-        bench bench-one bench-h100 results k8s-lint docker-build clean
+        bench bench-one bench-h100 results sync-chart-files k8s-lint docker-build clean
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk -F':.*?## ' '{printf "  \033[36m%-13s\033[0m %s\n", $$1, $$2}'
@@ -105,6 +105,15 @@ results: ## Regenerate results/README.md, docs/results.md, README's tables and t
 # Rollout are custom resources whose schemas are not part of Kubernetes. Every built-in
 # object is still validated with -strict, which rejects unknown fields.
 # ---------------------------------------------------------------------------------------
+
+# Helm's .Files.Get cannot read outside the chart directory, so the chart carries its own
+# copy of the two assets docker-compose also uses. This target regenerates them; a unit test
+# in tests/unit/test_deploy_assets.py fails when they drift.
+sync-chart-files: ## Copy the Grafana dashboard and Prometheus rules into the Helm chart
+	cp deploy/grafana/dashboards/turboserve.json $(CHART)/files/grafana-dashboard.json
+	cp deploy/prometheus/rules.yaml $(CHART)/files/prometheus-rules.yaml
+	@echo "ok  chart files synced"
+
 k8s-lint: ## helm lint + helm template | kubeconform + kustomize build (needs helm, kubectl, kubeconform)
 	$(HELM) lint $(CHART)
 	$(HELM) template turboserve $(CHART) \
@@ -132,7 +141,7 @@ k8s-lint: ## helm lint + helm template | kubeconform + kustomize build (needs he
 # the CUDA 12.4 torch resolution, which does not fit in a hosted GitHub runner's free disk, so
 # it is built on the GPU host instead:
 #   docker build -f Dockerfile.engine -t turboserve-engine:dev .
-# Docker is not available under WSL without Docker Desktop integration; the same command runs
+# Needs a Docker daemon, which a CPU-only checkout may not have; the same command runs
 # in the `docker` job of .github/workflows/ci.yml, which then smoke-runs the image.
 docker-build: ## Build the gateway image (IMAGE=turboserve-gateway:dev); needs Docker
 	$(DOCKER) build -f Dockerfile.gateway -t $(IMAGE) .
