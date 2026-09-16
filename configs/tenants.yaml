@@ -1,0 +1,84 @@
+# turboserve tenant directory -- EXAMPLE configuration for local development.
+#
+# API keys are stored as SHA-256 hex digests, never in clear text: this file ends up in git,
+# in a Kubernetes ConfigMap and in a Helm values file, and a leaked copy must not be a leaked
+# credential. The gateway hashes the presented bearer token and looks the digest up here.
+#
+# To add a key, hash it and paste the digest under `keys_sha256`:
+#
+#     turboserve gateway hash-key 'sk-your-key-here'
+#     printf %s 'sk-your-key-here' | sha256sum      # identical result, no trailing newline
+#     python -c "import hashlib,sys;print(hashlib.sha256(sys.argv[1].encode()).hexdigest())" 'sk-your-key-here'
+#
+# The digests below belong to throwaway development keys whose plaintext is written in the
+# comment beside them, so a fresh clone can issue a request without minting anything. They
+# grant access to a local gateway only. Replace every one of them before deploying, and keep
+# real keys in a Secret rather than in this file (see docs/runbook.md, "rotate tenant keys").
+#
+# Fields
+#   id               tenant identifier; the label on every metric, log line and usage record
+#   keys_sha256      accepted API keys, hashed; several entries allow zero-downtime rotation
+#   enabled          false authenticates the key but refuses the request with 403
+#   rpm / tpm        requests and tokens per minute; omit for no limit
+#   max_concurrency  simultaneous in-flight requests; over the limit is an immediate 429
+#   allowed_models   fnmatch patterns; omit or leave empty to allow every served model
+#   adapters         tenant-visible LoRA name -> what the backend knows it as
+#   priority         higher runs first inside an engine batch
+#   weight           share under the engine's `tenant_fair` scheduler policy
+
+version: 1
+
+tenants:
+  # plaintext dev keys: sk-turboserve-acme-dev, sk-turboserve-acme-dev-rotating
+  - id: acme
+    name: Acme Corp
+    keys_sha256:
+      - "0907d64e4b5322d318a7fa50aa3699c78c5ca951186a07c478b3f0b1eacc82a3"
+      - "a49527a0cefd6b7bfbecbea7bd4de60689745f1b8b0896953c816b610f65ed71"
+    rpm: 600
+    tpm: 300000
+    max_concurrency: 16
+    allowed_models:
+      - "Qwen/Qwen2.5-7B-Instruct"
+      - "Qwen/Qwen2.5-*-Instruct"
+    adapters:
+      support-bot: acme-support-r16
+      summariser: acme-summary-r16
+    priority: 10
+    weight: 4.0
+
+  # plaintext dev key: sk-turboserve-globex-dev
+  - id: globex
+    name: Globex
+    keys_sha256:
+      - "3c6104acdbb6dab4d435b38a4d65ff02b723499e6849a563be00aaac01b595ae"
+    rpm: 120
+    tpm: 60000
+    max_concurrency: 4
+    allowed_models:
+      - "Qwen/Qwen2.5-0.5B-Instruct"
+    adapters:
+      support-bot: globex-support-r16
+    priority: 0
+    weight: 1.0
+
+  # plaintext dev key: sk-turboserve-labs-dev -- unrestricted, for local experiments
+  - id: labs
+    name: Internal labs
+    keys_sha256:
+      - "26c4c1bbbc5ea60aba69743b27e56d78220638ae296ba8048922838c7272b509"
+    max_concurrency: 8
+    priority: -10
+    weight: 0.5
+
+  # plaintext dev key: sk-turboserve-suspended-dev -- authenticates, then 403s
+  - id: suspended
+    name: Suspended account
+    enabled: false
+    keys_sha256:
+      - "34387776070c8f6ac917df4e91e8d2fec90e40fca15e0ad0be3f79393d5339df"
+
+  # Used when the gateway runs with --no-require-auth (kind e2e, chaos harness).
+  - id: default
+    name: default (auth disabled)
+    max_concurrency: 64

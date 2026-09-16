@@ -1,0 +1,82 @@
+# turboserve model pools -- EXAMPLE configuration for local development.
+#
+# A model name addresses a *pool* of replicas, not a process. Each replica declares the lane
+# it belongs to (`stable` or `canary`) and a relative weight inside that lane; the split
+# between lanes is owned by the canary controller at run time, not by this file.
+#
+# backend types
+#   mock    in-process synthetic backend (no model, no GPU) -- tests, chaos, kind e2e
+#   openai  any OpenAI-compatible HTTP server: vLLM, TGI's OpenAI route, another gateway
+#   local   the in-process reference engine (turboserve.gateway.backends.local)
+# `options` is passed straight to the backend's constructor.
+#
+# price
+#   Configured list prices used ONLY to attribute spend between tenants in
+#   `turboserve_gateway_cost_usd_total`. They are an input to that attribution, not a
+#   measurement of anything, and they are not the source of any number in docs/results.md --
+#   those come from results JSON written by the benchmark harness. Set them to whatever your
+#   deployment bills at, or delete the block to leave a pool unpriced.
+
+version: 1
+
+models:
+  # A production-shaped pool: two stable vLLM replicas plus one canary replica running a
+  # candidate build. `turboserve canary run` moves traffic onto the canary lane in steps.
+  - name: Qwen/Qwen2.5-7B-Instruct
+    backends:
+      - name: vllm-stable-a
+        backend: openai
+        lane: stable
+        weight: 1.0
+        options:
+          base_url: http://vllm-stable-a:8000/v1
+          adapter_models:
+            acme-support-r16: acme-support-r16
+            acme-summary-r16: acme-summary-r16
+      - name: vllm-stable-b
+        backend: openai
+        lane: stable
+        weight: 1.0
+        options:
+          base_url: http://vllm-stable-b:8000/v1
+      - name: vllm-canary
+        backend: openai
+        lane: canary
+        weight: 1.0
+        options:
+          base_url: http://vllm-canary:8000/v1
+    price:
+      input_per_1m_usd: 0.20
+      output_per_1m_usd: 0.60
+      currency: USD
+      source: "configured list price for tenant attribution"
+
+  # The small model the development profile uses, served by the in-process reference engine.
+  # `options` is forwarded verbatim to LocalEngineBackend.__init__ (see docs/engine.md); if a
+  # key here does not match that signature, startup fails immediately and names this pool and
+  # backend rather than failing on the first request routed to it.
+  - name: Qwen/Qwen2.5-0.5B-Instruct
+    backends:
+      - name: reference
+        backend: local
+        lane: stable
+        options:
+          model: Qwen/Qwen2.5-0.5B-Instruct
+
+  # Always available, needs no weights: the target of the chaos and kind end-to-end runs.
+  - name: mock-model
+    backends:
+      - name: mock-a
+        backend: mock
+        lane: stable
+        options:
+          models: ["mock-model"]
+          adapters: ["acme-support-r16", "globex-support-r16"]
+          max_tokens: 64
+      - name: mock-b
+        backend: mock
+        lane: stable
+        options:
+          models: ["mock-model"]
+          adapters: ["acme-support-r16", "globex-support-r16"]
+          max_tokens: 64
