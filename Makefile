@@ -93,7 +93,7 @@ bench-h100: ## Rent an H100 on vast.ai, run the suite there, pull results/ back
 	@if [ "$(DESTROY)" = "1" ]; then FORCE=1 scripts/vastai/destroy.sh; \
 	else echo "instance left running -- stop the meter with scripts/vastai/destroy.sh"; fi
 
-results: ## Regenerate results/README.md, docs/results.md and the plots from results/*.json
+results: ## Regenerate results/README.md, docs/results.md, README's tables and the plots from results/*.json
 	$(UV) run turboserve results render --results-dir $(RESULTS_DIR)
 
 # ---------------------------------------------------------------------------------------

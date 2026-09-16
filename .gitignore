@@ -45,4 +45,6 @@ htmlcov/
 .vscode/
 .DS_Store
 
-# results/ is intentionally NOT ignored: measured JSON is part of the repository.
+# results/ is intentionally NOT ignored: the result JSON is part of the repository. The
+# index's flock file is not: it is an empty lock a concurrent scenario creates, not data.
+results/index.json.lock

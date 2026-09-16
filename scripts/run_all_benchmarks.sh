@@ -15,6 +15,7 @@
 #   VLLM_BASELINE_URL    a second vLLM server started WITHOUT --enable-prefix-caching,
 #                        used as the prefix-cache scenario's control arm
 #   TURBOSERVE           how to invoke the CLI (default: uv run --frozen turboserve)
+#   ADAPTERS_DIR         LoRA adapters the multi-lora scenario serves (default: adapters)
 #   SKIP                 space-separated scenario names to skip, e.g. "spec-decode chaos"
 #   EXTRA_<SCENARIO>     extra flags for one scenario, e.g. EXTRA_CHAOS="--mode inprocess"
 #   DRY_RUN=1            print the commands instead of running them
@@ -121,21 +122,49 @@ run_step prefix-cache ${TURBOSERVE} bench prefix-cache \
   "${PREFIX_ARGS[@]+"${PREFIX_ARGS[@]}"}" $(extra_flags prefix-cache)
 
 # ---------------------------------------------------------------------------------------
-# 3 and 4. speculative decoding and multi-adapter serving, when those scenarios are part
-#    of this installation.
+# 3. speculative decoding, when the scenario is part of this installation. The reference
+#    engine sweeps every pair and k; a vLLM server launched with the same sweep is measured
+#    as a second family of arms, named by --label-prefix so the two do not collide.
 # ---------------------------------------------------------------------------------------
-for optional in spec-decode multi-lora; do
-  if ! has_command "${optional}"; then
-    log "turboserve bench has no ${optional} command in this build; skipping"
-    continue
-  fi
-  OPTIONAL_ARGS=()
-  [[ -n "${VLLM_URL}" ]] && OPTIONAL_ARGS+=(--url "${VLLM_URL}")
+if has_command spec-decode; then
   # shellcheck disable=SC2046
-  run_step "${optional}" ${TURBOSERVE} bench "${optional}" \
-    --profile "${PROFILE}" --results-dir "${RESULTS_DIR}" \
-    "${OPTIONAL_ARGS[@]+"${OPTIONAL_ARGS[@]}"}" $(extra_flags "${optional}")
-done
+  run_step spec-decode ${TURBOSERVE} bench spec-decode \
+    --profile "${PROFILE}" --results-dir "${RESULTS_DIR}" $(extra_flags spec-decode)
+  if [[ -n "${VLLM_URL}" ]]; then
+    # shellcheck disable=SC2046
+    run_step spec-decode-vllm ${TURBOSERVE} bench spec-decode \
+      --profile "${PROFILE}" --results-dir "${RESULTS_DIR}" \
+      --url "${VLLM_URL}" --label-prefix "vLLM " $(extra_flags spec-decode)
+  else
+    log "no VLLM_URL: skipping the vLLM arms of spec-decode"
+  fi
+else
+  log "turboserve bench has no spec-decode command in this build; skipping"
+fi
+
+# ---------------------------------------------------------------------------------------
+# 4. multi-adapter serving. The command is a sub-group (`multi-lora run`) and writes into
+#    --out rather than --results-dir; ADAPTERS_DIR holds the adapters both engines serve
+#    (scripts/make_lora_adapters.py writes them, and vLLM must be started with
+#    --enable-lora --max-loras >= the largest arm).
+# ---------------------------------------------------------------------------------------
+ADAPTERS_DIR="${ADAPTERS_DIR:-adapters}"
+if has_command multi-lora; then
+  # shellcheck disable=SC2046
+  run_step multi-lora ${TURBOSERVE} bench multi-lora run \
+    --profile "${PROFILE}" --out "${RESULTS_DIR}" --adapters-dir "${ADAPTERS_DIR}" \
+    $(extra_flags multi-lora)
+  if [[ -n "${VLLM_URL}" ]]; then
+    # shellcheck disable=SC2046
+    run_step multi-lora-vllm ${TURBOSERVE} bench multi-lora run \
+      --profile "${PROFILE}" --out "${RESULTS_DIR}" --adapters-dir "${ADAPTERS_DIR}" \
+      --backend vllm --url "${VLLM_URL}" $(extra_flags multi-lora)
+  else
+    log "no VLLM_URL: skipping the vLLM arms of multi-lora"
+  fi
+else
+  log "turboserve bench has no multi-lora command in this build; skipping"
+fi
 
 # ---------------------------------------------------------------------------------------
 # 5. chaos: steady offered load through a replica fleet that is being killed.

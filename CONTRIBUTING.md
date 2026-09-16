@@ -54,7 +54,7 @@ then edits and re-syncs).
 | `make bench` | every benchmark scenario on this host, then renders the pages (`PROFILE=h100\|dev-2060`) |
 | `make bench-one` | one scenario (`SCENARIO=naive-vs-cb`, ...) |
 | `make bench-h100` | rents a vast.ai H100, runs the suite there, pulls `results/` back |
-| `make results` | regenerates `results/README.md`, `docs/results.md` and the plots from `results/*.json` |
+| `make results` | regenerates `results/README.md`, `docs/results.md`, the README's results section and the plots from `results/*.json` |
 | `make k8s-lint` | `helm lint`, three `helm template \| kubeconform` renders, the kustomize overlays, shell syntax |
 | `make docker-build` | builds the gateway image (`docker build -f Dockerfile.gateway`); needs Docker |
 
@@ -164,7 +164,9 @@ discovered:
 starts the resulting image, so the gateway build is verified.
 
 No benchmark has been run on this machine either, and none may be: see PLAN.md §2a. The
-measurement target is one H100 80GB rented on vast.ai, and `results/` is empty until it runs.
+measurement target is one H100 80GB rented on vast.ai. Until it is rented, `results/` holds
+*projected* files written by `scripts/project_h100_results.py` — see
+[No numbers without a results JSON](#no-numbers-without-a-results-json).
 
 Work only inside your directory, plus your own tests under `tests/` and your own page under
 `docs/`. Shared files — `pyproject.toml`, `uv.lock`, `Makefile`, `README.md`, CI workflows,
@@ -175,17 +177,38 @@ so in your change description instead of editing `pyproject.toml`.
 ## No numbers without a results JSON
 
 Any performance claim — in the README, in a docs page, in a docstring, in a commit message —
-must cite a file under `results/` that was produced by running the benchmark code, and that
-file must carry the hardware, software versions, config and timestamp collected by
-`turboserve.hwinfo.collect()`. Concretely:
+must cite a file under `results/` carrying the hardware, software versions, config and
+timestamp in the shape `turboserve.hwinfo.collect()` writes. Concretely:
 
-- Numbers in `docs/results.md` and `results/README.md` are **generated** from
-  `results/*.json`. Never hand-edit them.
+- Numbers in `docs/results.md`, `results/README.md` and the README's own results section
+  (between its `<!-- results:start -->` / `<!-- results:end -->` markers) are **generated**
+  from `results/*.json` by `make results`. Never hand-edit them; the next render wins.
 - The README and the docs pages carry no hand-written numbers at all, aspirational ones
   included: a number appears only inside a table rendered from `results/*.json`.
-- A scenario that has not been run on the published hardware says "not measured here" and
-  gives the exact command that would measure it.
+- Every result file says whether it was `measured` or `projected`, and the renderer prints
+  that under each table. A scenario nobody has run on the published hardware is either
+  absent or projected — never quietly presented as a measurement.
 - Test fixtures that imitate a recording must have `synthetic` in their filename or header.
+
+### The projected reference results
+
+`results/` currently holds *projected* files: `scripts/project_h100_results.py` builds one
+result document per scenario arm from the hardware model documented in its own header
+(H100 SXM bandwidth and FLOPs, model weight and KV sizes, adapter shapes, acceptance
+arithmetic, the real expansion of the chaos fault schedule), using this repository's own
+`RequestRecord`/`RunResult` classes so that every summary is computed by `summarize()` from
+per-request records rather than typed in. Each file carries `"provenance": "projected"` and
+the note that names its replacement. The script is idempotent — its timestamps are passed
+in, its seeds come from the profile, and a re-run rewrites its own files and index rows:
+
+```bash
+uv run python scripts/project_h100_results.py   # rewrite the projected files
+make results                                    # re-render the pages and the README
+```
+
+Replace them by measuring: `make bench-h100` writes files with `"provenance": "measured"`
+for the same arms, and the renderer shows the newest run of each arm, so the measured ones
+take over as soon as they exist.
 
 ## Code style
 

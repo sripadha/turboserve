@@ -81,9 +81,16 @@ BASE_LABEL = "base only"
 BackendName = Literal["reference", "vllm"]
 
 
-def arm_label(num_adapters: int) -> str:
-    """Human name of an arm: the control, or ``"<n> adapters"``."""
-    return BASE_LABEL if num_adapters == 0 else f"{num_adapters} adapters"
+def arm_label(num_adapters: int, backend: str = "reference") -> str:
+    """Human name of an arm: the control, or ``"<n> adapters"``, per engine.
+
+    A backend other than the reference engine is named in the label because the renderer
+    identifies an arm by its label: two engines measured into the same results directory
+    would otherwise write rows that look like the same measurement twice, and only the last
+    one rendered would survive.
+    """
+    base = BASE_LABEL if num_adapters == 0 else f"{num_adapters} adapters"
+    return base if backend == "reference" else f"{base} ({backend})"
 
 
 def result_path(results_dir: Path | str, label: str, *, now: datetime | None = None) -> Path:
@@ -332,7 +339,8 @@ class _VLLMDriver:
                 f"{num_adapters}; vLLM must also be started with --max-loras >= {num_adapters}"
             )
         names = tuple(self._names[:num_adapters])
-        return _Arm(arm_label(num_adapters), num_adapters, names, self._backend.generate, None)
+        label = arm_label(num_adapters, "vllm")
+        return _Arm(label, num_adapters, names, self._backend.generate, None)
 
 
 @asynccontextmanager
@@ -480,7 +488,7 @@ async def run_scenario(
                     **profile.config_for(SCENARIO),
                     "label": arm.label,
                     "backend": backend,
-                    "baseline_label": BASE_LABEL,
+                    "baseline_label": arm_label(0, backend),
                     "num_adapters": num_adapters,
                     "adapter_names": list(arm.adapter_names),
                     "adapters_dir": str(adapters_path),

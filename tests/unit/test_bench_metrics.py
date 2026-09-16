@@ -10,6 +10,8 @@ from turboserve.bench.metrics import (
     RecordBuilder,
     baseline_label,
     compare_runs,
+    compare_to_labels,
+    comparison_groups,
     group_by,
     pct_delta,
     ratio,
@@ -283,3 +285,41 @@ def test_slo_from_mapping_ignores_unset_and_unknown_keys() -> None:
 def test_slo_from_mapping_rejects_a_non_positive_objective() -> None:
     with pytest.raises(ValueError, match="must be positive"):
         slo_from_mapping({"ttft_ms": 0.0})
+
+
+def test_comparison_groups_partition_by_the_baseline_each_arm_declares() -> None:
+    runs = [
+        make_run("a/target only", baseline="a/target only"),
+        make_run("a/k=4", baseline="a/target only"),
+        make_run("b/target only", baseline="b/target only"),
+        make_run("b/k=4", baseline="b/target only"),
+    ]
+    groups = comparison_groups(runs)
+    assert [name for name, _ in groups] == ["a/target only", "b/target only"]
+    assert [[run_label(run) for run in members] for _, members in groups] == [
+        ["a/k=4"],
+        ["b/k=4"],
+    ]
+
+
+def test_comparison_groups_honour_compare_to_and_ignore_unmeasured_arms() -> None:
+    naive = make_run("naive", baseline="naive")
+    naive.config["compare_to"] = ["static batch", "an arm nobody ran"]
+    static = make_run("static batch", baseline="naive")
+    cb = make_run("continuous batching", baseline="naive")
+    cb.config["compare_to"] = "static batch"
+    groups = comparison_groups([naive, static, cb])
+    assert [name for name, _ in groups] == ["naive", "static batch"]
+    assert [run_label(run) for run in groups[1][1]] == ["naive", "continuous batching"]
+    assert compare_to_labels(static) == []
+    assert compare_to_labels(cb) == ["static batch"]
+
+
+def test_comparison_groups_fall_back_to_the_first_run_when_nothing_is_declared() -> None:
+    runs = [make_run("one"), make_run("two")]
+    for run in runs:
+        run.config.pop("baseline_label", None)
+    groups = comparison_groups(runs)
+    assert [name for name, _ in groups] == ["one"]
+    assert [run_label(run) for run in groups[0][1]] == ["two"]
+    assert comparison_groups([]) == []

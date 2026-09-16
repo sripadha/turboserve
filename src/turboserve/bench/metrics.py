@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "BACKEND_KEY",
     "BASELINE_KEY",
+    "COMPARE_KEY",
     "DERIVED_KEY",
     "LABEL_KEY",
     "SLO",
@@ -50,6 +51,8 @@ __all__ = [
     "RequestRecord",
     "baseline_label",
     "compare_runs",
+    "compare_to_labels",
+    "comparison_groups",
     "group_by",
     "pct_delta",
     "percentile",
@@ -478,6 +481,13 @@ BACKEND_KEY = "backend"
 #: ``config["baseline_label"]``: the label of the arm the others are compared against.
 BASELINE_KEY = "baseline_label"
 
+#: ``config["compare_to"]``: further arms this run also wants to be measured against, as a
+#: label or a list of them. A scenario declares it when the comparison a reader came for is
+#: between two *non-baseline* arms -- continuous batching against a padded static batch, say,
+#: where the baseline every arm shares is sequential decoding -- so that the ratio is
+#: rendered rather than left to the reader to divide out of two other ratios.
+COMPARE_KEY = "compare_to"
+
 #: ``summary["derived"]``: scenario-specific figures (cache hit rate, acceptance rate,
 #: adapter memory) that the generic summariser cannot compute, added after ``finish()``.
 DERIVED_KEY = "derived"
@@ -542,3 +552,64 @@ def compare_runs(results: Sequence[RunResult], *, baseline: str | None = None) -
             Comparison.from_summaries(reference, label, anchor_summary, run_summary(result))
         )
     return comparisons
+
+
+def compare_to_labels(result: RunResult) -> list[str]:
+    """The extra arms ``result`` declares in ``config["compare_to"]``.
+
+    Accepts a single label or a list of them, and ignores anything that is not a non-empty
+    string, so a hand-written config cannot turn a render into a traceback.
+    """
+    value = result.config.get(COMPARE_KEY)
+    if isinstance(value, str):
+        return [value] if value else []
+    if isinstance(value, list | tuple):
+        return [item for item in value if isinstance(item, str) and item]
+    return []
+
+
+def comparison_groups(results: Sequence[RunResult]) -> list[tuple[str, list[RunResult]]]:
+    """The relative tables a set of comparable runs asks for: one per reference arm.
+
+    A scenario does not always have *one* control. ``spec_decode`` sweeps several
+    target/draft pairs in a single run and each pair is only meaningful against its own
+    target-only arm; ``multi_lora`` measured on two engines has one base-only arm per
+    engine. Comparing every arm against whichever control happened to be written first
+    would produce ratios between things that were never alternatives to each other, so the
+    runs are partitioned by the baseline each of them *declares*, and a run additionally
+    naming arms in ``config["compare_to"]`` joins those arms' tables as well.
+
+    Returns ``(reference label, runs to measure against it)`` pairs in the order the
+    references were first declared, skipping any reference that is not itself among
+    ``results`` -- a table against an arm nobody measured would be a row of em dashes.
+    With no declaration anywhere the whole set is compared against
+    :func:`baseline_label`'s answer, which is what a one-off run written by hand gets.
+    """
+    by_label = {run_label(result): result for result in results}
+    order: list[str] = []
+    members: dict[str, list[RunResult]] = {}
+
+    def want(result: RunResult, reference: Any) -> None:
+        if not isinstance(reference, str) or not reference:
+            return
+        if reference not in by_label or reference == run_label(result):
+            return
+        if reference not in members:
+            order.append(reference)
+            members[reference] = []
+        members[reference].append(result)
+
+    # Declared baselines first, so a scenario's own control heads its section and the extra
+    # comparisons an arm asked for follow it.
+    for result in results:
+        want(result, result.config.get(BASELINE_KEY))
+    for result in results:
+        for reference in compare_to_labels(result):
+            want(result, reference)
+    if order:
+        return [(reference, members[reference]) for reference in order]
+    fallback = baseline_label(results)
+    if fallback is None or fallback not in by_label:
+        return []
+    rest = [result for result in results if run_label(result) != fallback]
+    return [(fallback, rest)] if rest else []

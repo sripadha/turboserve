@@ -245,8 +245,16 @@ class RequestRecord:
 
         ``None`` below two output tokens: the decode phase has no measurable slope yet,
         and the first token's cost is TTFT, reported separately.
+
+        Also ``None`` when the last token was observed at the same instant as the first,
+        which is what a blocking backend produces -- ``transformers.generate`` returns
+        nothing until the whole completion exists, so a client observes every token at
+        once. The decode phase has no measurable slope there either, and a literal
+        ``0.0 ms`` per token would render as the fastest decoder ever measured.
         """
         if self.output_tokens < 2 or self.t_first_ns is None or self.t_last_ns is None:
+            return None
+        if self.t_last_ns <= self.t_first_ns:
             return None
         return (self.t_last_ns - self.t_first_ns) / (self.output_tokens - 1) / NS_PER_MS
 

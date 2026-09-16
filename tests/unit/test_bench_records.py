@@ -144,6 +144,14 @@ def test_record_tpot_needs_two_output_tokens() -> None:
     assert _record(output_tokens=1).tpot_ms is None
 
 
+def test_record_tpot_is_none_when_every_token_arrived_at_once() -> None:
+    # What a blocking baseline produces: one event carrying the whole completion, so the
+    # client observed no interval between tokens. Zero would read as an instant decode.
+    record = _record(t_last_ns=_record().t_first_ns, itl_ns=[])
+    assert record.tpot_ms is None
+    assert record.e2e_ms == record.ttft_ms
+
+
 def test_record_defaults_are_a_successful_stable_lane_request() -> None:
     record = RequestRecord(request_id="r")
     assert record.ok

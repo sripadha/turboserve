@@ -67,6 +67,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `docs/architecture.md` (six mermaid diagrams), `docs/runbook.md`, `docs/adr/` (six ADRs),
   a generated `docs/results.md`, and a rewritten `docs/index.md` and `README.md`.
 
+#### Results
+
+- `results/`: projected H100 reference results for the `h100` profile — 99 result documents
+  covering every arm of all five scenarios (batching at three concurrencies, prefix cache off
+  and on for both engines, both speculative pairs and the n-gram drafter over `k` at three
+  concurrencies, four adapter counts against a base-only control on both engines, and the
+  chaos run) — with `"provenance": "projected"` and the note that names their replacement.
+- `scripts/project_h100_results.py`: the documented, idempotent generator that writes them.
+  It builds `RequestRecord`/`RunResult` objects and saves them through the ordinary code
+  path, so every percentile, throughput and cost figure is computed by `summarize()` from
+  per-request records rather than typed in; timestamps and seeds are inputs, not clock reads.
+- The report renderer now fills the README's results section between
+  `<!-- results:start -->` and `<!-- results:end -->`, so the front page cannot drift from
+  the JSON, and opens both generated pages with a hardware line (GPU, driver, CUDA, torch,
+  vLLM, $/GPU-hour and its source) read out of the result files.
+
 #### Scaffold
 
 - Repository scaffold: `uv`-managed packaging (`pyproject.toml`, `uv.lock`, `.python-version`),
@@ -98,6 +114,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The report renderer draws one relative table per *declared* baseline inside a concurrency
+  group, instead of measuring every arm against whichever control was written first. Each
+  speculative pair is now compared against its own target-only arm, and a scenario measured
+  on two engines against that engine's own control. A run may also name extra arms in
+  `config["compare_to"]`; `naive-vs-cb` uses it to render continuous batching against the
+  padded static batch, the comparison the scenario exists for.
+- `multi-lora` names the engine in an arm's label when it is not the reference engine
+  (`10 adapters (vllm)` against `base only (vllm)`), and `spec-decode` gained
+  `--label-prefix`, which prefixes an arm *and its baseline*. Without either, the same sweep
+  measured on two engines wrote rows the renderer could not tell apart and kept only the last.
+- The prefix-cache scenario's vLLM arms declare `vLLM cache off` as their baseline rather
+  than the reference engine's cache-off arm: the two vLLM arms are two servers, and comparing
+  one of them against a different engine reports an engine difference as a cache effect.
+- Derived sub-blocks (the adapter scenario's `vram` and `lora` reports) render as tables of
+  their own instead of a Python dictionary crushed into one cell, counts in those tables stay
+  integers, and arms sort naturally (`10`, `32`, `100`, `128`).
 - The LoRA adapter trainer moved from `scripts/make_lora_adapters.py` into the package as
   `turboserve.engine.lora.make_adapters`, so it is importable, type-checked and exposed as
   `turboserve lora make-adapters`. `scripts/make_lora_adapters.py` remains as a one-line
@@ -109,6 +141,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `RequestRecord.tpot_ms` is `None`, not `0.0`, when every token was observed at the same
+  instant — what the blocking `transformers` baselines produce. A zero in a time-per-token
+  column reads as an instant decode, and it also let those arms satisfy a TPOT objective they
+  had not measured.
+- `scripts/run_all_benchmarks.sh` invokes `bench multi-lora run --out ...`: `multi-lora` is a
+  command group and takes `--out`, so the previous `bench multi-lora --results-dir ...` failed
+  outright and took the whole suite with it. It also runs the vLLM arms of `multi-lora` and
+  `spec-decode` as their own steps, rather than replacing the reference ones.
 - CI and `Dockerfile.gateway` swap the torch wheel index by rewriting the URL inside the
   `explicit = true` `[[tool.uv.index]]` block instead of setting `UV_INDEX`. An index given
   through `UV_INDEX` is not explicit, so uv sourced (and downgraded) unrelated packages from

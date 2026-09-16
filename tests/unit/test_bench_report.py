@@ -8,6 +8,7 @@ own ``results/`` directory is read or written.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 from typer.testing import CliRunner
@@ -22,18 +23,29 @@ from turboserve.bench.plots import (
 from turboserve.bench.records import RequestRecord, RunResult
 from turboserve.bench.report import (
     MISSING,
+    README_END,
+    README_START,
     discover_runs,
+    hardware_line,
+    label_sort_key,
     md_table,
     provenance_line,
+    readme_section,
     render_index,
     render_run,
     results_app,
+    update_between_markers,
 )
 
 MS = 1_000_000
 
 HARDWARE = {
     "gpu_name": "NVIDIA H100 80GB HBM3",
+    "nvidia_smi": {
+        "driver_version": "570.86.16",
+        "driver_cuda_version": "12.8",
+        "gpus": [{"name": "NVIDIA H100 80GB HBM3"}],
+    },
     "git": {"sha": "0123456789abcdef", "branch": "main", "dirty": False},
 }
 
@@ -69,15 +81,16 @@ def make_run(
     concurrency: int = 32,
     started_at: str = "2026-09-16T10:00:00+00:00",
     provenance: str = "projected",
-    derived: dict[str, float] | None = None,
+    derived: dict[str, Any] | None = None,
     count: int = 8,
+    config_extra: dict[str, Any] | None = None,
 ) -> RunResult:
     """One finished synthetic run carrying the config conventions the renderer reads."""
     run = RunResult(
         scenario=scenario,
         profile=profile,
         hardware=dict(HARDWARE),
-        software={"turboserve": "0.1.0"},
+        software={"turboserve": "0.1.0", "torch": "2.6.0+cu124", "vllm": "0.11.0"},
         git_sha="0123456789abcdef",
         started_at=started_at,
         gpu_price_per_hour=2.49,
@@ -89,6 +102,7 @@ def make_run(
             "backend": "reference",
             "baseline_label": baseline,
             "load": {"concurrency": concurrency},
+            **(config_extra or {}),
         },
         requests=make_records(count, ttft_ms=ttft_ms),
     )
@@ -349,3 +363,140 @@ def test_results_show_command_prints_one_run(tmp_path: Path) -> None:
 
     missing = runner.invoke(results_app, ["show", str(root / "nope.json")])
     assert missing.exit_code == 1
+
+
+# -- hardware line, several baselines, the README section -----------------------------------
+
+
+def test_hardware_line_names_the_gpu_driver_stack_and_price() -> None:
+    line = hardware_line([make_run("naive_vs_cb", "naive")])
+    assert line.startswith("**Hardware:** 1x NVIDIA H100 80GB HBM3")
+    assert "driver 570.86.16" in line
+    assert "CUDA 12.8" in line
+    assert "torch 2.6.0+cu124" in line
+    assert "vllm 0.11.0" in line
+    assert "$2.49/GPU-hour (synthetic fixture)" in line
+    assert hardware_line([]) == ""
+
+
+def test_hardware_line_omits_what_no_run_recorded() -> None:
+    run = make_run("naive_vs_cb", "naive")
+    run.hardware = {}
+    run.software = {}
+    run.gpu_price_per_hour = None
+    assert hardware_line([run]) == ""
+
+
+def test_each_declared_baseline_gets_its_own_relative_table(tmp_path: Path) -> None:
+    # Two families in one concurrency group, as the speculative sweep writes them: each pair
+    # is only comparable against its own target-only arm.
+    runs = [
+        make_run("spec_decode", "pair-a / target only", baseline="pair-a / target only"),
+        make_run("spec_decode", "pair-a / k=4", baseline="pair-a / target only", ttft_ms=50.0),
+        make_run("spec_decode", "pair-b / target only", baseline="pair-b / target only"),
+        make_run("spec_decode", "pair-b / k=4", baseline="pair-b / target only", ttft_ms=80.0),
+    ]
+    write_runs(tmp_path / "results", runs)
+    text = render_index(
+        tmp_path / "results", docs_path=tmp_path / "docs.md", make_plots=False
+    ).readme_text
+    assert "Relative to `pair-a / target only` at concurrency 32:" in text
+    assert "Relative to `pair-b / target only` at concurrency 32:" in text
+    # ... and the families do not leak into each other's table.
+    table_a = text.split("Relative to `pair-a / target only`")[1].split("Relative to")[0]
+    assert "pair-a / k=4" in table_a
+    assert "pair-b" not in table_a
+
+
+def test_compare_to_adds_a_relative_table_against_a_second_arm(tmp_path: Path) -> None:
+    extra = {"compare_to": ["static batch"]}
+    runs = [
+        make_run("naive_vs_cb", "naive", config_extra=extra),
+        make_run("naive_vs_cb", "static batch", ttft_ms=200.0),
+        make_run("naive_vs_cb", "continuous batching", ttft_ms=50.0, config_extra=extra),
+    ]
+    write_runs(tmp_path / "results", runs)
+    text = render_index(
+        tmp_path / "results", docs_path=tmp_path / "docs.md", make_plots=False
+    ).readme_text
+    assert "Relative to `naive` at concurrency 32:" in text
+    assert "Relative to `static batch` at concurrency 32:" in text
+
+
+def test_a_declared_baseline_nobody_measured_is_skipped(tmp_path: Path) -> None:
+    runs = [make_run("chaos", "steady", baseline="a lane that was not run")]
+    write_runs(tmp_path / "results", runs)
+    text = render_index(
+        tmp_path / "results", docs_path=tmp_path / "docs.md", make_plots=False
+    ).readme_text
+    assert "Relative to" not in text
+
+
+def test_derived_blocks_render_as_their_own_tables_and_counts_stay_counts(
+    tmp_path: Path,
+) -> None:
+    derived: dict[str, Any] = {
+        "num_adapters": 16,
+        "p95_ttft_loss_pct": 5.25,
+        "vram": {"saved_pct": 96.5, "num_slots": 16},
+    }
+    runs = [make_run("multi_lora", "16 adapters", derived=derived)]
+    write_runs(tmp_path / "results", runs)
+    text = render_index(
+        tmp_path / "results", docs_path=tmp_path / "docs.md", make_plots=False
+    ).readme_text
+    assert "Scenario-specific figures:" in text
+    assert "Scenario-specific figures — `vram`:" in text
+    assert "| 16 adapters | 16 | 5.250 |" in text  # an int is not 16.000
+    assert "96.500" in text
+    assert "{'saved_pct'" not in text  # never a python dict in a cell
+
+
+def test_labels_sort_the_way_a_reader_reads_them() -> None:
+    labels = ["100 adapters", "10 adapters", "base only", "32 adapters"]
+    assert sorted(labels, key=label_sort_key) == [
+        "10 adapters",
+        "32 adapters",
+        "100 adapters",
+        "base only",
+    ]
+
+
+def test_readme_section_carries_the_headline_scenario_and_the_machine() -> None:
+    loaded = [
+        (Path("results/naive_vs_cb/000.json"), make_run("naive_vs_cb", "naive")),
+        (
+            Path("results/naive_vs_cb/001.json"),
+            make_run("naive_vs_cb", "continuous batching", ttft_ms=20.0),
+        ),
+        (Path("results/chaos/002.json"), make_run("chaos", "steady")),
+    ]
+    section = readme_section(loaded)
+    assert "**Hardware:**" in section
+    assert "### `naive_vs_cb`" in section
+    assert "Relative to `naive` at concurrency 32:" in section
+    assert "Provenance: projected" in section
+    assert "`chaos`" in section  # the other scenarios are named, not tabled
+    assert "steady" not in section
+    assert readme_section([]).startswith("No result files were found")
+
+
+def test_render_index_fills_the_project_readme_between_its_markers(tmp_path: Path) -> None:
+    root = tmp_path / "results"
+    write_runs(root, [make_run("naive_vs_cb", "naive"), make_run("naive_vs_cb", "cb", ttft_ms=9.0)])
+    readme = tmp_path / "README.md"
+    readme.write_text(f"# demo\n\n{README_START}\nstale\n{README_END}\n\n## License\n", "utf-8")
+    render_index(root, docs_path=tmp_path / "docs.md", make_plots=False)
+    text = readme.read_text(encoding="utf-8")
+    assert "stale" not in text
+    assert "### `naive_vs_cb`" in text
+    assert text.startswith("# demo")
+    assert text.endswith("## License\n")
+
+
+def test_a_readme_without_markers_is_left_alone(tmp_path: Path) -> None:
+    readme = tmp_path / "README.md"
+    readme.write_text("# demo\n", encoding="utf-8")
+    assert update_between_markers(readme, "tables") is False
+    assert readme.read_text(encoding="utf-8") == "# demo\n"
+    assert update_between_markers(tmp_path / "absent.md", "tables") is False

@@ -83,8 +83,14 @@ __all__ = ["SCENARIO", "Arm", "prefix_cache_command", "run_scenario"]
 
 SCENARIO = "prefix_cache"
 
-#: The arm every other arm is compared against in the rendered relative table.
+#: The arm the reference engine's arms are compared against in the rendered relative table.
 BASELINE_LABEL = "cache off"
+
+#: The control arm of the vLLM pair. A vLLM server's prefix cache is a launch flag, so the
+#: two vLLM arms are two servers, and their comparison only means anything against each
+#: other: measuring vLLM-with-cache against *this repository's* engine-without-cache would
+#: report the difference between two engines as if it were the cache's doing.
+VLLM_BASELINE_LABEL = "vLLM cache off"
 
 
 class Arm:
@@ -97,6 +103,11 @@ class Arm:
         self.backend_name = backend_name
         self.caching = caching
         self.url = url
+
+    @property
+    def baseline_label(self) -> str:
+        """The cache-off arm of this arm's own engine, which is what it is measured against."""
+        return VLLM_BASELINE_LABEL if self.url is not None else BASELINE_LABEL
 
     def build(self, model: str, options: EngineOptions, *, local_files_only: bool) -> AnyBackend:
         """Instantiate the backend this arm is served by."""
@@ -268,7 +279,7 @@ async def _run_arm(
         profile.name,
         label=arm.label,
         backend=arm.backend_name,
-        baseline_label=BASELINE_LABEL,
+        baseline_label=arm.baseline_label,
         spec=spec,
         config={
             **profile.config_for(SCENARIO),

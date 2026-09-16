@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,8 +33,8 @@ import typer
 
 from turboserve.bench.metrics import (
     DERIVED_KEY,
-    baseline_label,
     compare_runs,
+    comparison_groups,
     run_label,
     run_summary,
 )
@@ -47,13 +48,27 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "MISSING",
+    "README_END",
+    "README_START",
     "RenderedIndex",
     "discover_runs",
+    "hardware_line",
+    "label_sort_key",
     "provenance_line",
+    "readme_section",
     "render_index",
     "render_run",
     "results_app",
+    "update_between_markers",
 ]
+
+#: The markers in the project ``README.md`` that ``render_index`` rewrites between, so the
+#: front page carries the headline tables without anybody typing a number into it.
+README_START = "<!-- results:start -->"
+README_END = "<!-- results:end -->"
+
+#: The scenario whose tables the README carries, when the results contain it.
+HEADLINE_SCENARIO = "naive_vs_cb"
 
 #: What an absent number renders as. An em dash, never a zero: a zero in a latency column
 #: reads as "instant" and would be the single most misleading character in these pages.
@@ -202,6 +217,79 @@ def provenance_line(results: Sequence[RunResult]) -> str:
     return f"_{line}_"
 
 
+def _first(values: Iterable[Any]) -> Any:
+    """The first non-empty value of a sequence of lookups, or ``None``."""
+    for value in values:
+        if value:
+            return value
+    return None
+
+
+def _gpu_block(result: RunResult) -> Mapping[str, Any]:
+    """The ``nvidia-smi`` record of the first GPU, as ``hwinfo.collect()`` stores it."""
+    smi = result.hardware.get("nvidia_smi")
+    if not isinstance(smi, Mapping):
+        return {}
+    gpus = smi.get("gpus")
+    first = gpus[0] if isinstance(gpus, list) and gpus else {}
+    return first if isinstance(first, Mapping) else {}
+
+
+def hardware_line(results: Sequence[RunResult]) -> str:
+    """The one-line statement of *what* the tables on a page were produced on.
+
+    A provenance line says whether a number was measured and when; this says on which
+    machine and at what price, which is the other half a reader needs before comparing a
+    throughput or a cost column against anything else. Everything in it is read out of the
+    result files' own hardware and software blocks -- the GPU name and count, the driver and
+    CUDA versions, the torch and vLLM versions, and the $/GPU-hour with its source -- and a
+    field no run recorded is simply left out rather than guessed at.
+    """
+    if not results:
+        return ""
+    gpus = [_gpu_block(result) for result in results]
+    names = sorted({str(gpu["name"]) for gpu in gpus if gpu.get("name")})
+    counts = sorted(
+        {
+            len(smi["gpus"])
+            for smi in (result.hardware.get("nvidia_smi") for result in results)
+            if isinstance(smi, Mapping) and isinstance(smi.get("gpus"), list) and smi["gpus"]
+        }
+    )
+    parts: list[str] = []
+    if names:
+        count = f"{counts[0]}x " if len(counts) == 1 and counts[0] else ""
+        parts.append(f"{count}{', '.join(names)}")
+    driver = _first(
+        [
+            smi.get("driver_version")
+            for smi in (result.hardware.get("nvidia_smi") for result in results)
+            if isinstance(smi, Mapping)
+        ]
+    )
+    if driver:
+        parts.append(f"driver {driver}")
+    cuda = _first(
+        [
+            smi.get("driver_cuda_version")
+            for smi in (result.hardware.get("nvidia_smi") for result in results)
+            if isinstance(smi, Mapping)
+        ]
+    )
+    if cuda:
+        parts.append(f"CUDA {cuda}")
+    for package in ("torch", "vllm"):
+        version = _first([result.software.get(package) for result in results])
+        if version:
+            parts.append(f"{package} {version}")
+    prices = sorted({result.gpu_price_per_hour for result in results if result.gpu_price_per_hour})
+    if prices:
+        shown = ", ".join(f"${price:.2f}" for price in prices)
+        source = _first([result.price_source for result in results])
+        parts.append(f"{shown}/GPU-hour" + (f" ({source})" if source else ""))
+    return f"**Hardware:** {' · '.join(parts)}." if parts else ""
+
+
 # -- one run ------------------------------------------------------------------------------
 
 
@@ -213,7 +301,6 @@ def render_run(result: RunResult, *, title: str | None = None, heading_level: in
     """
     heading = "#" * max(heading_level, 1)
     label = run_label(result)
-    summary = run_summary(result)
     lines = [f"{heading} {title or f'{result.scenario} — {label}'}", ""]
     facts = [
         ("Scenario", result.scenario),
@@ -226,9 +313,9 @@ def render_run(result: RunResult, *, title: str | None = None, heading_level: in
     ]
     lines.append(md_table(["Field", "Value"], [[name, str(value)] for name, value in facts]))
     lines.extend(["", md_table(*_summary_table([result])), "", provenance_line([result])])
-    derived = summary.get(DERIVED_KEY)
-    if isinstance(derived, Mapping) and derived:
-        lines.extend(["", md_table(*_derived_table([result]))])
+    for name, headers, rows in _derived_tables([result]):
+        lines.extend(["", f"{name}:" if name else "Scenario-specific figures:", ""])
+        lines.append(md_table(headers, rows))
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -266,11 +353,13 @@ def _by_concurrency(results: Sequence[RunResult]) -> list[tuple[int | None, list
     return sorted(groups.items(), key=lambda item: (item[0] is None, item[0] or 0))
 
 
-def _comparison_table(results: Sequence[RunResult]) -> tuple[list[str], list[list[str]]]:
-    """Headers and rows of the table of ratios and deltas against the baseline arm."""
+def _comparison_table(
+    results: Sequence[RunResult], *, baseline: str | None = None
+) -> tuple[list[str], list[list[str]]]:
+    """Headers and rows of the table of ratios and deltas against one reference arm."""
     headers = ["Arm vs baseline", *(header for header, _, _, _ in _COMPARISON_COLUMNS)]
     rows: list[list[str]] = []
-    for comparison in compare_runs(results):
+    for comparison in compare_runs(results, baseline=baseline):
         row = [comparison.candidate]
         for _, attribute, suffix, digits in _COMPARISON_COLUMNS:
             value = getattr(comparison, attribute)
@@ -281,27 +370,76 @@ def _comparison_table(results: Sequence[RunResult]) -> tuple[list[str], list[lis
     return headers, rows
 
 
-def _derived_table(results: Sequence[RunResult]) -> tuple[list[str], list[list[str]]]:
-    """Scenario-specific figures a run recorded under ``summary["derived"]``."""
-    keys: list[str] = []
+def _cell(value: Any) -> str:
+    """One derived figure as a table cell.
+
+    Counts stay counts: a step count printed as ``2396.000`` invites the reader to look for
+    a precision that does not exist, so an integer is rendered as an integer and only a
+    genuine float gets decimals.
+    """
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return _number(value, 3)
+    return str(value) if value else MISSING
+
+
+def _derived_tables(
+    results: Sequence[RunResult],
+) -> list[tuple[str | None, list[str], list[list[str]]]]:
+    """Scenario-specific figures from ``summary["derived"]``, one table per block.
+
+    A derived block is mostly flat -- counts and rates the generic summariser cannot compute
+    -- but two scenarios record a whole sub-block under one key: the adapter scenario's
+    ``vram`` and ``lora`` reports. Those become tables of their own, named after the key,
+    because dropping a twenty-field mapping into a single cell renders as an unreadable
+    Python dictionary and dotting them into the flat table makes it forty columns wide.
+    """
+    flat_keys: list[str] = []
+    block_keys: list[str] = []
     for result in results:
         derived = run_summary(result).get(DERIVED_KEY)
-        if isinstance(derived, Mapping):
-            keys.extend(key for key in derived if key not in keys)
-    headers = ["Arm", *keys]
-    rows: list[list[str]] = []
-    for result in results:
-        derived = run_summary(result).get(DERIVED_KEY)
-        if not isinstance(derived, Mapping) or not derived:
+        if not isinstance(derived, Mapping):
             continue
-        row = [run_label(result)]
-        for key in keys:
-            value = derived.get(key)
-            row.append(
-                _number(value, 3) if isinstance(value, int | float) else str(value or MISSING)
-            )
-        rows.append(row)
-    return headers, rows
+        for key, value in derived.items():
+            target = block_keys if isinstance(value, Mapping) else flat_keys
+            if key not in target:
+                target.append(key)
+
+    def table(
+        name: str | None, keys: Sequence[str], pick: Any
+    ) -> tuple[str | None, list[str], list[list[str]]]:
+        rows: list[list[str]] = []
+        for result in results:
+            block = pick(result)
+            if not isinstance(block, Mapping) or not block:
+                continue
+            rows.append([run_label(result), *(_cell(block.get(key)) for key in keys)])
+        return name, ["Arm", *keys], rows
+
+    def flat_of(result: RunResult) -> Mapping[str, Any]:
+        derived = run_summary(result).get(DERIVED_KEY)
+        if not isinstance(derived, Mapping):
+            return {}
+        return {key: value for key, value in derived.items() if not isinstance(value, Mapping)}
+
+    tables = [table(None, flat_keys, flat_of)] if flat_keys else []
+    for name in block_keys:
+        keys: list[str] = []
+        for result in results:
+            derived = run_summary(result).get(DERIVED_KEY)
+            block = derived.get(name) if isinstance(derived, Mapping) else None
+            if isinstance(block, Mapping):
+                keys.extend(key for key in block if key not in keys)
+
+        def pick(result: RunResult, name: str = name) -> Any:
+            derived = run_summary(result).get(DERIVED_KEY)
+            return derived.get(name) if isinstance(derived, Mapping) else None
+
+        tables.append(table(name, keys, pick))
+    return [entry for entry in tables if entry[2]]
 
 
 def _files_table(entries: Sequence[tuple[Path, RunResult]], base: Path) -> str:
@@ -323,6 +461,21 @@ def _files_table(entries: Sequence[tuple[Path, RunResult]], base: Path) -> str:
             ]
         )
     return md_table(["Arm", "Concurrency", "Started", "File"], rows)
+
+
+def label_sort_key(label: str) -> tuple[tuple[int, int, str], ...]:
+    """Sort arms the way a reader reads them: 10 adapters, 32, 100, 128 -- not 10, 100, 128, 32.
+
+    Digit runs compare as numbers and everything else as text, so ``k=2`` precedes ``k=10``
+    and an arm named for a count lands where its count belongs.
+    """
+    parts: list[tuple[int, int, str]] = []
+    for chunk in re.findall(r"\d+|\D+", label):
+        if chunk.isdigit():
+            parts.append((0, int(chunk), ""))
+        else:
+            parts.append((1, 0, chunk.casefold()))
+    return tuple(parts)
 
 
 def _relative(path: Path, base: Path) -> str:
@@ -391,33 +544,39 @@ def _scenario_section(
         lines.extend([md_table(*_summary_table(runs)), "", provenance_line(runs), ""])
         groups = _by_concurrency(runs)
         for concurrency, group in groups:
-            comparison_headers, comparison_rows = _comparison_table(group)
-            if not comparison_rows:
-                continue
-            reference = baseline_label(group) or MISSING
             at_load = f" at concurrency {concurrency}" if concurrency is not None else ""
+            for reference, candidates in comparison_groups(group):
+                anchor = next(run for run in group if run_label(run) == reference)
+                rows_for = [anchor, *candidates]
+                comparison_headers, comparison_rows = _comparison_table(
+                    rows_for, baseline=reference
+                )
+                if not comparison_rows:
+                    continue
+                lines.extend(
+                    [
+                        f"Relative to `{reference}`{at_load}:",
+                        "",
+                        md_table(comparison_headers, comparison_rows),
+                        "",
+                        provenance_line(rows_for),
+                        "",
+                    ]
+                )
+        derived_tables = _derived_tables(runs)
+        for name, headers, rows in derived_tables:
             lines.extend(
                 [
-                    f"Relative to `{reference}`{at_load}:",
+                    f"Scenario-specific figures — `{name}`:"
+                    if name
+                    else "Scenario-specific figures:",
                     "",
-                    md_table(comparison_headers, comparison_rows),
-                    "",
-                    provenance_line(group),
+                    md_table(headers, rows),
                     "",
                 ]
             )
-        derived_headers, derived_rows = _derived_table(runs)
-        if derived_rows:
-            lines.extend(
-                [
-                    "Scenario-specific figures:",
-                    "",
-                    md_table(derived_headers, derived_rows),
-                    "",
-                    provenance_line(runs),
-                    "",
-                ]
-            )
+        if derived_tables:
+            lines.extend([provenance_line(runs), ""])
         lines.extend(["Result files:", "", _files_table(in_profile, page_dir), ""])
     for plot in plot_paths.get(scenario, []):
         location = _relative(plot, page_dir)
@@ -450,11 +609,13 @@ def _page(
             ]
         )
         return "\n".join(lines)
+    machine = hardware_line([result for _, result in loaded])
     lines.extend(
         [
             f"{len(loaded)} run(s) across {len(scenarios)} scenario(s). "
             "Each table is followed by the provenance of the runs behind it.",
             "",
+            *([machine, ""] if machine else []),
             md_table(
                 ["Scenario", "Runs", "Profiles"],
                 [
@@ -475,12 +636,83 @@ def _page(
     return "\n".join(lines).rstrip() + "\n"
 
 
+def readme_section(loaded: Sequence[tuple[Path, RunResult]]) -> str:
+    """The block the project README carries between its ``results`` markers.
+
+    The README shows one scenario -- :data:`HEADLINE_SCENARIO` when it is present, else the
+    first one there is -- because a front page that repeated all five tables would be read
+    by nobody, and because every one of them is one click away in ``docs/results.md``. What
+    it does show is generated from exactly the same result files as that page, so the two
+    cannot disagree: the absolute table of every arm at every load level, the relative
+    tables at the middle load level (the sweep's representative point, and the only place a
+    ratio between two arms is worth quoting without its load), the machine, and the
+    provenance of the runs behind them.
+    """
+    if not loaded:
+        return (
+            "No result files were found under `results/`. Run the suite with "
+            "`make bench-h100` (or `make bench PROFILE=dev-2060` for a smoke run) and "
+            "render with `make results`."
+        )
+    scenarios = sorted({result.scenario for _, result in loaded})
+    scenario = HEADLINE_SCENARIO if HEADLINE_SCENARIO in scenarios else scenarios[0]
+    runs = [result for _, result in loaded if result.scenario == scenario]
+    machine = hardware_line([result for _, result in loaded])
+    lines = [*([machine, ""] if machine else []), f"### `{scenario}`", ""]
+    lines.extend([md_table(*_summary_table(runs)), "", provenance_line(runs), ""])
+    groups = _by_concurrency(runs)
+    if groups:
+        concurrency, group = groups[len(groups) // 2]
+        at_load = f" at concurrency {concurrency}" if concurrency is not None else ""
+        for reference, candidates in comparison_groups(group):
+            anchor_run = next(run for run in group if run_label(run) == reference)
+            rows_for = [anchor_run, *candidates]
+            headers, rows = _comparison_table(rows_for, baseline=reference)
+            if not rows:
+                continue
+            lines.extend([f"Relative to `{reference}`{at_load}:", "", md_table(headers, rows), ""])
+        lines.append(provenance_line(group))
+        lines.append("")
+    others = [name for name in scenarios if name != scenario]
+    if others:
+        lines.append(
+            "The other scenarios — "
+            + ", ".join(f"`{name}`" for name in others)
+            + " — are in [docs/results.md](docs/results.md), with the plots and the raw "
+            "records behind every row."
+        )
+    return "\n".join(lines).rstrip()
+
+
+def update_between_markers(path: Path, body: str) -> bool:
+    """Replace the text between the README markers with ``body``; report whether it changed.
+
+    Leaves the file alone (and says so in the log) when it has no markers, so that a
+    checkout whose README does not want generated tables is never rewritten by a render.
+    """
+    if not path.is_file():
+        return False
+    text = path.read_text(encoding="utf-8")
+    start = text.find(README_START)
+    end = text.find(README_END, start + 1)
+    if start < 0 or end < 0:
+        logger.info("%s has no %s/%s markers; not updating it", path, README_START, README_END)
+        return False
+    updated = f"{text[: start + len(README_START)]}\n\n{body}\n\n{text[end:]}"
+    if updated == text:
+        return False
+    path.write_text(updated, encoding="utf-8")
+    logger.info("updated %s between the results markers", path)
+    return True
+
+
 def render_index(
     results_dir: Path | str = "results",
     *,
     readme_path: Path | str | None = None,
     docs_path: Path | str | None = None,
     plots_dir: Path | str | None = None,
+    project_readme: Path | str | None = None,
     make_plots: bool = True,
     write: bool = True,
 ) -> RenderedIndex:
@@ -489,14 +721,22 @@ def render_index(
     The two pages carry identical content and differ only in the relative paths they use to
     reach the plots and the result files, which is why they are rendered from one pass over
     the data instead of from two.
+
+    ``project_readme`` is the repository's own ``README.md``: when it carries the
+    ``results:start``/``results:end`` markers, the headline tables are written between them
+    from the same data, which is what makes it impossible for a number on the front page to
+    drift from the JSON it came out of.
     """
     root = Path(results_dir)
     readme = Path(readme_path) if readme_path is not None else root / "README.md"
     docs = Path(docs_path) if docs_path is not None else root.parent / "docs" / "results.md"
     plots = Path(plots_dir) if plots_dir is not None else root / "plots"
+    project = Path(project_readme) if project_readme is not None else root.parent / "README.md"
 
     loaded = _latest_per_arm(discover_runs(root))
-    loaded.sort(key=lambda item: (item[1].scenario, item[1].profile, run_label(item[1])))
+    loaded.sort(
+        key=lambda item: (item[1].scenario, item[1].profile, label_sort_key(run_label(item[1])))
+    )
     scenarios = sorted({result.scenario for _, result in loaded})
 
     plot_paths: dict[str, list[Path]] = {}
@@ -514,6 +754,7 @@ def render_index(
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding="utf-8")
             logger.info("wrote %s", path)
+        update_between_markers(project, readme_section(loaded))
     return RenderedIndex(
         readme_text=readme_text,
         docs_text=docs_text,
@@ -553,6 +794,13 @@ def render_command(
         Path | None,
         typer.Option("--plots-dir", help="Where to write the PNG plots."),
     ] = None,
+    project_readme: Annotated[
+        Path | None,
+        typer.Option(
+            "--project-readme",
+            help="Project README whose results markers are refilled; defaults to ../README.md.",
+        ),
+    ] = None,
     make_plots: Annotated[
         bool,
         typer.Option("--plots/--no-plots", help="Draw the plots as well as the tables."),
@@ -564,6 +812,7 @@ def render_command(
         readme_path=readme,
         docs_path=docs,
         plots_dir=plots,
+        project_readme=project_readme,
         make_plots=make_plots,
     )
     typer.echo(

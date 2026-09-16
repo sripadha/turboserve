@@ -70,7 +70,10 @@ Details that change the numbers, and are therefore fixed in one place each:
 
 - **TPOT excludes the first token.** That token's cost is TTFT, reported separately; below
   two output tokens TPOT is `None` rather than zero, because the decode phase has no
-  measurable slope yet.
+  measurable slope yet. It is `None` for the same reason when the last token was observed at
+  the same instant as the first — what a blocking backend produces, since
+  `transformers.generate` returns the whole completion at once — where a literal `0.0 ms`
+  per token would render as the fastest decoder ever measured.
 - **The wall clock is derived from the records**, from the first send to the last token
   received — not from process start to process exit. Model loading, tokenizer warm-up and
   writing the result file do not depress throughput.
@@ -206,7 +209,14 @@ in `RunResult.config`, which is the whole contract between a scenario and the re
 
 - `config["label"]` — the arm's human name (`"continuous batching"`, `"cache on"`);
 - `config["backend"]` — which engine served it, used as the label when there is none;
-- `config["baseline_label"]` — the label of the arm the others are measured against;
+- `config["baseline_label"]` — the label of the arm this one is measured against. Arms that
+  declare different baselines are rendered as different families: each speculative pair is
+  compared against its own target-only arm, and a scenario measured on two engines against
+  that engine's own control;
+- `config["compare_to"]` — further arms to also be measured against, as a label or a list of
+  them. `naive-vs-cb` uses it to put continuous batching against the *padded static batch*
+  as well as against sequential decoding, because that ratio is the one the scenario exists
+  to show and dividing two other ratios is not a rendered number;
 - `config["load"]` — the load-generator settings, including `concurrency`;
 - `summary["derived"]` — scenario-specific figures the generic summariser cannot compute
   (cache hit rate, acceptance rate, adapter memory), added after `finish()`.
@@ -235,11 +245,19 @@ newest run of each (scenario, profile, arm, concurrency), and writes:
   skipped when the runs cannot support it; an axis drawn through a single point suggests a
   trend that was not measured.
 
-Each scenario section contains an absolute table of every arm, then a table of ratios and
-percentage deltas against the baseline arm **grouped by concurrency** (arms are only
-comparable at the same offered load), then any derived figures, then the list of result
-files the section was built from, each linked so a reader can open the raw records behind a
-row.
+- the project `README.md`, between its `<!-- results:start -->` and `<!-- results:end -->`
+  markers, if it has them: the headline scenario's tables, so the front page cannot drift
+  from the JSON. `--project-readme` points at a different file.
+
+Each scenario section contains an absolute table of every arm, then one table of ratios and
+percentage deltas per declared baseline **grouped by concurrency** (arms are only comparable
+at the same offered load, and only against a control of their own kind), then any derived
+figures — a sub-block such as the adapter scenario's `vram` report becomes a table of its
+own rather than a dictionary crushed into one cell — then the list of result files the
+section was built from, each linked so a reader can open the raw records behind a row.
+
+Both pages open with a hardware line naming the GPU, the driver and CUDA versions, the torch
+and vLLM versions and the $/GPU-hour with its source, all read out of the result files.
 
 An absent number renders as an em dash (`—`), never as a zero: a zero in a latency column
 reads as "instant" and would be the most misleading character on the page. A ratio with a
@@ -260,6 +278,14 @@ table it draws:
 A table whose runs disagree is reported as `measured + projected` rather than as the
 majority, because a table whose rows have different standing is exactly the case a reader
 must be warned about. A projected file with no note is called out as such.
+
+The files under `results/` are projected today, written by `scripts/project_h100_results.py`
+from the hardware model documented in that script's header: it builds `RequestRecord` and
+`RunResult` objects and saves them through the same code path a run uses, so the summaries
+are computed by `summarize()` from per-request records rather than written by hand. It is
+idempotent, takes its timestamps and seeds as inputs, and re-running it rewrites its own
+files. `make bench-h100` replaces them with measured runs of the same arms; the renderer
+keeps the newest run of each arm, so the measured ones take over the tables as they arrive.
 
 ## Running it
 
@@ -306,7 +332,7 @@ All on CPU, in seconds, with no network and no model:
 | --- | --- |
 | `tests/unit/test_loadgen.py` | Poisson arrival statistics against the exponential distribution (mean, standard deviation, the 63.2% below-mean mass); the open driver following the planned schedule; the closed driver's concurrency bound; `max_in_flight`; request repetition with unique ids; backend errors, timeouts, truncated streams and in-band error events each becoming one failed record; a timeout closing the iterator, observed through the generator's `finally` |
 | `tests/unit/test_bench_metrics.py` | TTFT/ITL/TPOT/E2E arithmetic from replayed timestamps; multi-token chunks splitting their interval; first-chunk tokens contributing no sample; `usage` overriding counted tokens; grouping and per-group summaries; ratios and deltas returning `None` instead of infinity; SLO parsing |
-| `tests/unit/test_bench_report.py` | markdown escaping; the provenance line for measured, projected, mixed and note-less runs; both pages written with the same numbers and different link depths; the relative table's signed deltas; derived figures; deduplication by arm and concurrency; PNG plots actually written; plots skipped when the data cannot support them; the `render` and `show` commands |
+| `tests/unit/test_bench_report.py` | markdown escaping; the provenance line for measured, projected, mixed and note-less runs; the hardware line, including what it omits when a run recorded nothing; both pages written with the same numbers and different link depths; the relative table's signed deltas; one relative table per declared baseline and per `compare_to` arm, and a declared baseline nobody measured being skipped; derived sub-blocks rendered as their own tables with counts kept as counts; natural ordering of arm labels; the README section and the marker rewrite (including a README without markers being left alone); deduplication by arm and concurrency; PNG plots actually written; plots skipped when the data cannot support them; the `render` and `show` commands |
 | `tests/unit/test_bench_prompts.py` | exact token counts at several lengths; an identical shared prefix with differing suffixes; seeded reproducibility; round-robin tenants; the ShareGPT and file loaders including their error paths; the length guarantee against a real cached Qwen2 tokenizer |
 | `tests/unit/test_bench_profiles.py` | the shipped profiles matching the specified sizes; no profile stating an objective; strict validation rejecting unknown keys, an over-long prefix, a mis-specified drafter pair, duplicate names, zeros in a sweep and a future schema version |
 
@@ -324,5 +350,7 @@ Streams in the tests are small async generators standing in for a backend, so th
   available, but it is a model of what happened, not a measurement of each token.
 - **No results were produced on this machine.** The development GPU here is a 6 GB Turing
   card; it can run `dev-2060` smoke runs to prove the pipeline works end to end, and those
-  are never published. Published results come from the `h100` profile on rented hardware.
+  are never published. Published results come from the `h100` profile on rented hardware,
+  and until that run happens the `h100` tables are the projected reference documents
+  described under [Provenance](#provenance), labelled as such under every table.
 - **`sharegpt` needs a local copy of the dataset**; nothing in this repository downloads it.

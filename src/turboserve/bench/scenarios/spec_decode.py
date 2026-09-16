@@ -298,6 +298,7 @@ async def run_arm(
     options: EngineOptions,
     url: str | None = None,
     label: str | None = None,
+    label_prefix: str = "",
     num_warmup: int = 2,
     request_timeout_s: float | None = None,
     local_files_only: bool = False,
@@ -311,6 +312,12 @@ async def run_arm(
     ``label`` overrides the arm's own name, which is what a remote server needs: its
     speculative settings are fixed at its launch, so calling the run "k=4" because this
     process asked for ``k=4`` would be a claim about something this process did not control.
+
+    ``label_prefix`` is the other half of that, for a remote server that *was* launched with
+    the sweep this process is driving: it keeps the arm's own name (and its pair's
+    target-only baseline, prefixed identically) while saying which engine produced it, so
+    the same sweep measured on two engines renders as two families of rows instead of one
+    engine silently overwriting the other's.
     """
     backend_name = "vllm" if url else "reference"
     backend = build_backend(arm, options, url=url, local_files_only=local_files_only)
@@ -320,13 +327,13 @@ async def run_arm(
         backend_name=backend_name,
         request_timeout_s=request_timeout_s,
     )
-    arm_label = label or arm.label
+    arm_label = label or f"{label_prefix}{arm.label}"
     run = open_run(
         SCENARIO,
         profile.name,
         label=arm_label,
         backend=backend_name,
-        baseline_label=arm.baseline_label if label is None else None,
+        baseline_label=f"{label_prefix}{arm.baseline_label}" if label is None else None,
         spec=spec,
         config={**profile.config_for(SCENARIO), **arm.to_dict()},
     )
@@ -385,6 +392,7 @@ async def run_scenario(
     num_requests: int | None = None,
     url: str | None = None,
     label: str | None = None,
+    label_prefix: str = "",
     num_warmup: int = 2,
     request_timeout_s: float | None = None,
     local_files_only: bool = False,
@@ -421,6 +429,7 @@ async def run_scenario(
                 options=options,
                 url=url,
                 label=label,
+                label_prefix=label_prefix,
                 num_warmup=num_warmup,
                 request_timeout_s=request_timeout_s,
                 local_files_only=local_files_only,
@@ -476,6 +485,13 @@ def spec_decode_command(
     label: Annotated[
         str | None, typer.Option("--label", help="Arm name for a remote server's own settings.")
     ] = None,
+    label_prefix: Annotated[
+        str,
+        typer.Option(
+            "--label-prefix",
+            help="Prefix every arm and baseline name, e.g. 'vLLM ' for a remote sweep.",
+        ),
+    ] = "",
     dtype: Annotated[
         str | None, typer.Option("--dtype", help="Override the profile's dtype.")
     ] = None,
@@ -561,6 +577,7 @@ def spec_decode_command(
                 num_requests=num_requests,
                 url=url,
                 label=label,
+                label_prefix=label_prefix,
                 num_warmup=warmup,
                 request_timeout_s=request_timeout_s,
                 local_files_only=local_files_only,

@@ -64,7 +64,11 @@ The sweep is over the profile's concurrencies; each (arm, concurrency) pair writ
 result file, and the rendered relative table is grouped by concurrency because arms are only
 comparable at the same offered load. `naive` is the baseline every other arm is measured
 against, recorded in *every* arm's `config["baseline_label"]` so the comparison survives one
-file being deleted.
+file being deleted. Every arm except the static-batch one also names `static batch` in
+`config["compare_to"]`, which makes the renderer draw a second relative table: sequential
+decoding is the floor, but continuous batching *against a padded static batch* is the
+comparison this scenario exists for, and it should be a rendered number rather than one
+ratio divided by another.
 
 Three controls, each of which changes the answer if dropped:
 
@@ -106,7 +110,10 @@ that differ in exactly one flag:
 
 Two URLs rather than one, because on vLLM prefix caching is a *launch* flag: a client cannot
 turn it off for a single request, and comparing one server against itself would measure
-nothing.
+nothing. For the same reason the two vLLM arms name `vLLM cache off` as their baseline while
+the two engine arms name `cache off`: each pair is only meaningful against its own engine's
+control, and measuring vLLM-with-cache against this repository's engine-without-cache would
+report the difference between two engines as if it were the cache's doing.
 
 The measured phase is preceded by warm-up requests carrying the same prefix
 (`--warmup`, one by default). A block is indexed in the prefix cache only once its tokens
@@ -185,6 +192,16 @@ does not have to know what the chart deployed.
 
 ## `spec-decode` and `multi-lora`
 
+Both scenarios can be driven against a vLLM server as well as against the in-process engine,
+and both say so in the arm's *name*, because the renderer identifies an arm by its label and
+two engines writing into the same results directory would otherwise produce rows that look
+like one measurement made twice. `spec-decode` takes `--label-prefix "vLLM "`, which prefixes
+each arm and its pair's target-only baseline (`--label` remains the way to name a remote
+server whose speculative settings this process did not choose, and it declares no baseline);
+`multi-lora --backend vllm` names its arms `<n> adapters (vllm)` against a control called
+`base only (vllm)`.
+
+
 Scenarios 3 and 4 of the specification belong to the engine's speculative-decoding and
 multi-LoRA module groups, and their scenario modules are registered **optionally**:
 `bench/cli.py` imports `turboserve.bench.scenarios.spec_decode` and
@@ -258,6 +275,7 @@ DRY_RUN=1 ./scripts/run_all_benchmarks.sh     # print the commands, run nothing
 | `VLLM_BASELINE_URL` | a second vLLM server started **without** `--enable-prefix-caching`, the prefix-cache control arm |
 | `TURBOSERVE` | how to invoke the CLI (default `uv run --frozen turboserve`) |
 | `SKIP` | space-separated scenario names to skip |
+| `ADAPTERS_DIR` | LoRA adapters the `multi-lora` scenario serves (default `adapters`) |
 | `EXTRA_<SCENARIO>` | extra flags for one scenario, e.g. `EXTRA_CHAOS="--mode inprocess"` |
 | `DRY_RUN=1` | print the commands instead of running them |
 | `CONTINUE_ON_ERROR=1` | keep going when one scenario fails; the failures are listed at the end |

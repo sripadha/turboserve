@@ -44,7 +44,7 @@ claim on it is backed by code under `src/turboserve/` or by a test under `tests/
 | [`benchmarking.md`](benchmarking.md) | Exact metric definitions (TTFT, ITL, TPOT, E2E, goodput), profiles, prompt sources, how a result file is produced |
 | [`scenarios.md`](scenarios.md) | The five experiments: what each varies, what it holds fixed, and the `turboserve bench` commands |
 | [`vastai.md`](vastai.md) | Renting the H100, running the suite on it, bringing the results home (`make bench-h100`) |
-| [`results.md`](results.md) | Measured results — **generated** by `make results` from `results/*.json`, never hand-edited |
+| [`results.md`](results.md) | The result tables and plots — **generated** by `make results` from `results/*.json`, never hand-edited, each table labelled measured or projected |
 
 ### Decisions
 

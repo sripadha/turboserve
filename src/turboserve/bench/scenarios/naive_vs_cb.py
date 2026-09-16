@@ -105,6 +105,13 @@ ARM_LABELS: dict[str, str] = {
 #: The arm every other arm is compared against in the rendered relative table.
 BASELINE_ARM = "naive_hf"
 
+#: A second reference the renderer draws a relative table against when it was measured.
+#: Sequential decoding is the baseline because it is the floor, but the comparison a reader
+#: of this scenario came for is continuous batching against a *padded static batch* -- the
+#: thing a serving stack does when it batches naively -- and that ratio is only a rendered
+#: number if some arm asks for it (``config["compare_to"]``).
+SECONDARY_ARM = "static_batch"
+
 
 def _select_arms(work: NaiveVsCBProfile, requested: Sequence[str] | None) -> list[str]:
     """The arms to run, in the profile's order, validated against what it declares."""
@@ -230,6 +237,7 @@ async def run_scenario(
                         measured=measured,
                         warm_prompts=warm_prompts,
                         baseline_label=baseline_label,
+                        compare_to_static=SECONDARY_ARM in selected and arm != SECONDARY_ARM,
                         base_dir=base_dir,
                         request_timeout_s=request_timeout_s,
                         slo=slo,
@@ -253,6 +261,7 @@ async def _run_one(
     measured: Sequence[BenchPrompt],
     warm_prompts: Sequence[BenchPrompt],
     baseline_label: str,
+    compare_to_static: bool,
     base_dir: Path,
     request_timeout_s: float | None,
     slo: Any,
@@ -286,6 +295,7 @@ async def _run_one(
             "model": work_model,
             "output_tokens": uniform_output,
             "engine": _engine_block(arm, options, url),
+            **({"compare_to": [ARM_LABELS[SECONDARY_ARM]]} if compare_to_static else {}),
         },
     )
     load.into(run)
